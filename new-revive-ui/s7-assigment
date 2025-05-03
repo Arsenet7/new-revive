@@ -1,0 +1,51 @@
+Question: 
+   Should we use one Jenkinsfile for CI and CI/CD or one Jenkinsfile  for each of them 
+   defend your point and win $100 this week 
+   submit before the begining of next class 
+
+
+Background:
+
+
+     CI/CD:
+       testing
+       sonarqube
+       login
+       buid images
+       push images 
+       clone another repository to update with new tag and commit back to github
+       any action taken after outside of jenkins by another tool called argocd
+     
+     CI:
+       testing
+       sonarqube
+       login
+       buid images
+     
+     CD: 
+       push images 
+       clone another repository to update with new tag and commit back to github
+       any action taken after outside of jenkins by another tool called argocd 
+     
+     
+     mandatory pipeline in DEV area 
+       . multibranch pipeline ------> CI pipeline
+            * connecting jenkin to github
+                * credentials
+                * repo URL 
+                * branch
+                   * all branches EXCEPT the default branch
+                * jenkins automation file AKA Jenkinsfile
+            * triggering conditions
+                 * new branch created 
+                 * commit on any feature branch (all branches EXCEPT the default branch)
+     
+       . pipeline -------------------- CI/CD pipeline
+            * connecting jenkin to github
+                * credentials
+                * repo URL 
+                * branch
+                   * ONLY the defaut branch 
+                * jenkins automation file AKA Jenkinsfile
+            * triggering conditions
+                 * ONLY when a Pull Request is merged
