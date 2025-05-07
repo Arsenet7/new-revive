@@ -1,0 +1,146 @@
+version: '3.8'
+
+services:
+  # UI Service
+  ui:
+    image: arsenet10/new-revive:ui
+    ports:
+      - "8080:8080"
+    depends_on:
+      - orders
+      - checkout
+      - carts
+      - catalog
+      - assets
+    networks:
+      - frontend
+
+   # Orders Service
+  orders:
+    image: arsenet10/new-revive:orders
+    volumes:
+      - new-revive-orders:/app
+    depends_on:
+      - orders-db
+      - rabbitmq
+    environment:
+      - DB_HOST=orders-db
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=orders
+      - DB_PORT=5432
+      - RABBITMQ_URL=amqp://rabbitmq
+    networks:
+      - frontend
+      - backend
+
+  # Checkout Service
+  checkout:
+    image: arsenet10/new-revive:checkout
+    depends_on:
+      - checkout-cache
+    environment:
+      - REDIS_HOST=checkout-cache
+      - REDIS_PORT=6379
+    networks:
+      - frontend
+      - backend
+
+  # Carts Service
+  carts:
+    image: arsenet10/new-revive:cart
+    volumes:
+      - new-revive-cart:/app
+    depends_on:
+      - carts-db
+    environment:
+      - DYNAMODB_ENDPOINT=http://carts-db:8000
+    networks:
+      - frontend
+      - backend
+
+  # Catalog Service
+  catalog:
+    image: arsenet10/new-revive:catalog
+    depends_on:
+      - catalog-db
+    restart: always 
+    environment:
+      - DB_HOST=catalog-db
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_NAME=catalog
+    networks:
+      - frontend
+      - backend
+
+  # Assets Service
+  assets:
+    image: arsenet10/new-revive:asset
+    networks:
+      - frontend
+
+  # Databases
+  orders-db:
+    image: arsenet10/new-revive:orders-db
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=orders
+    volumes:
+      - orders-db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  checkout-cache:
+    image: arsenet10/new-revive:checkout-db
+    volumes:
+      - checkout-cache-data:/data
+    networks:
+      - backend
+
+  carts-db:
+    image: arsenet10/new-revive:cart-db
+    ports:
+      - "8000:8000"
+    volumes:
+      - carts-db-data:/home/dynamodblocal/data
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
+    networks:
+      - backend
+
+  catalog-db:
+    image: arsenet10/new-revive:catalog-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=catalog
+    volumes:
+      - catalog-db-data:/var/lib/mysql
+    networks:
+      - backend
+
+  # Messaging Infrastructure
+  rabbitmq:
+    image: arsenet10/new-revive:orders-rabbit-mq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+
+volumes:
+  orders-db-data:
+  checkout-cache-data:
+  carts-db-data:
+  catalog-db-data:
+  rabbitmq-data:
+  new-revive-orders: 
+  new-revive-cart:
+  new-revive-checkout:
+  
