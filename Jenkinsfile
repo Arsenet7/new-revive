@@ -42,7 +42,7 @@ pipeline {
                 success {
                     sh '''
                         cd new-revive-ui/ui
-                        find target -name "*.jar" -type f -exec cp {} ${WORKSPACE} \;
+                        find target -name "*.jar" -type f -exec cp {} ${WORKSPACE} ;
                     '''
                     archiveArtifacts artifacts: '*.jar', fingerprint: true
                 }
