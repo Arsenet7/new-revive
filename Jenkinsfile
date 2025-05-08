@@ -35,14 +35,14 @@ pipeline {
                 sh 'mvn --version'
                 sh '''
                     cd new-revive-ui/ui
-                    mvn clean package
+                    mvn -e -X clean package
                 '''
             }
             post {
                 success {
                     sh '''
                         cd new-revive-ui/ui
-                        find target -name "*.jar" -type f -exec cp {} ${WORKSPACE} ;
+                        find target -name "*.jar" -type f -exec cp {} ${WORKSPACE} \;
                     '''
                     archiveArtifacts artifacts: '*.jar', fingerprint: true
                 }
@@ -59,7 +59,7 @@ pipeline {
             steps {
                 sh '''
                     cd new-revive-ui/ui
-                    mvn test
+                    mvn -e -X test
                 '''
             }
             post {
@@ -67,7 +67,7 @@ pipeline {
                     sh '''
                         cd new-revive-ui/ui
                         mkdir -p ${WORKSPACE}/test-reports
-                        find target/surefire-reports -name "*.xml" -type f -exec cp {} ${WORKSPACE}/test-reports ;
+                        find target/surefire-reports -name "*.xml" -type f -exec cp {} ${WORKSPACE}/test-reports \;
                     '''
                     junit 'test-reports/*.xml'
                 }
