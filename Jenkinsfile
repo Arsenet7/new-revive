@@ -24,17 +24,38 @@ pipeline {
             }
         }
         
-        stage('Build') {
+        stage('Build with Maven') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-11'
+                    reuseNode true
+                }
+            }
             steps {
-                echo 'Building the project...'
-                // Add your build steps here
+                sh 'mvn --version'
+                sh 'mvn clean package'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                }
             }
         }
         
         stage('Test') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-11'
+                    reuseNode true
+                }
+            }
             steps {
-                echo 'Running tests...'
-                // Add your test steps here
+                sh 'mvn test'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
             }
         }
         
