@@ -43,7 +43,7 @@ pipeline {
                     sh '''
                         cd new-revive-ui/ui
                         '''
-                    archiveArtifacts artifacts: '*.jar', fingerprint: true
+                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
                 }
             }
         }
