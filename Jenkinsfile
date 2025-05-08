@@ -1,20 +1,61 @@
 pipeline {
-    agent any
-
+    agent {
+        label 'new-revive-agent'
+    }
+    
     stages {
         stage('Checkout') {
             steps {
-                // Checkout code from GitHub repository
-                git branch: 'main', url: 'git@github.com:your-username/your-repository.git'
+                // Clean workspace before checkout
+                cleanWs()
+                
+                // Checkout the repository using the credential ID
+                checkout([
+                    $class: 'GitSCM', 
+                    branches: [[name: 'ui']], 
+                    doGenerateSubmoduleConfigurations: false, 
+                    extensions: [], 
+                    submoduleCfg: [], 
+                    userRemoteConfigs: [[
+                        credentialsId: 'new-revive-ssh-key',
+                        url: 'https://github.com/Arsenet7/new-revive.git'
+                    ]]
+                ])
             }
         }
-
-        stage('Unit Test') {
+        
+        stage('Build') {
             steps {
-                echo 'Running Unit Tests...'
-                // Add your command to run unit tests
-                sh './run-tests.sh'  // Example: Running a test script
+                echo 'Building the project...'
+                // Add your build steps here
             }
+        }
+        
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                // Add your test steps here
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                echo 'Deploying the application...'
+                // Add your deployment steps here
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Pipeline executed successfully!'
+        }
+        failure {
+            echo 'Pipeline execution failed!'
+        }
+        always {
+            echo 'Cleaning workspace...'
+            cleanWs()
         }
     }
 }
