@@ -68,7 +68,7 @@ pipeline {
                         mkdir -p ${WORKSPACE}/test-reports
                         
                     '''
-                    junit 'test-reports/*.xml'
+                    
                 }
             }
         }
