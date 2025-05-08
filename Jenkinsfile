@@ -27,7 +27,7 @@ pipeline {
         stage('Build with Maven') {
             agent {
                 docker {
-                    image 'maven:3.8-openjdk-11'
+                    image 'maven:3.8-openjdk-17'
                     reuseNode true
                 }
             }
@@ -51,7 +51,7 @@ pipeline {
         stage('Test') {
             agent {
                 docker {
-                    image 'maven:3.8-openjdk-11'
+                    image 'maven:3.8-openjdk-17'
                     reuseNode true
                 }
             }
