@@ -67,7 +67,7 @@ pipeline {
                     sh '''
                         cd new-revive-ui/ui
                         mkdir -p ${WORKSPACE}/test-reports
-                        find target/surefire-reports -name "*.xml" -type f -exec cp {} ${WORKSPACE}/test-reports \;
+                        find target/surefire-reports -name "*.xml" -type f -exec cp {} ${WORKSPACE}/test-reports ;
                     '''
                     junit 'test-reports/*.xml'
                 }
