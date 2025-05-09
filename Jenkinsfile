@@ -21,33 +21,61 @@ pipeline {
             }
         }
         
-        // Add additional stages as needed, for example:
-        stage('Build') {
+        stage('Build with Maven') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
             steps {
-                echo 'Building the project...'
-                // Add build commands here
+                dir('/new-revive-cart/cart') {
+                    sh 'mvn clean install -DskipTests'
+                }
             }
         }
         
-        stage('Test') {
+        stage('Test with Maven') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
             steps {
-                echo 'Running tests...'
-                // Add test commands here
+                dir('/new-revive-cart/cart') {
+                    sh 'mvn test'
+                }
             }
         }
         
-        // You can add more stages like deploy, etc.
+        stage('Package') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('/new-revive-cart/cart') {
+                    sh 'mvn package'
+                }
+            }
+        }
     }
     
     post {
         success {
             echo 'Pipeline executed successfully!'
+            archiveArtifacts artifacts: '/new-revive-cart/cart/target/*.jar', fingerprint: true
         }
         failure {
             echo 'Pipeline execution failed!'
         }
         always {
             echo 'Pipeline execution completed.'
+            // Clean up Docker containers if needed
+            sh 'docker system prune -f'
         }
     }
 }
