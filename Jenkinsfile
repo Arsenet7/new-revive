@@ -22,7 +22,7 @@ pipeline {
                     image 'golang:1.21'
                     reuseNode true
                     // Using tmpfs instead of volume mount to avoid permission issues
-                    args '--user root -e HOME=/tmp -e GOCACHE=/tmp/go-cache -e GOPATH=/go'
+                    args '--user root  '
                 }
             }
             steps {
