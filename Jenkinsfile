@@ -32,7 +32,7 @@ pipeline {
             }
             steps {
                 echo 'Building the project with Maven...'
-                dir('revive-orders/orders') {
+                dir('new-revive-orders/orders') {
                     sh 'mvn clean compile'
                     
                     echo 'Running Maven tests...'
@@ -44,7 +44,7 @@ pipeline {
             }
             post {
                 success {
-                    dir('revive-orders/orders') {
+                    dir('new-revive-orders/orders') {
                         archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                         junit 'target/surefire-reports/*.xml'
                     }
