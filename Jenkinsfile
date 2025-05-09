@@ -21,6 +21,7 @@ pipeline {
                 docker {
                     image 'golang:1.21'
                     reuseNode true
+                    args '-u root'
                     args '-v /tmp/go-cache:/tmp/go-cache'
                 }
             }
