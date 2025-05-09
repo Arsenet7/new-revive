@@ -21,43 +21,32 @@ pipeline {
                 docker {
                     image 'golang:1.21'
                     reuseNode true
-                    args '-u root'
-                    args '-v /tmp/go-cache:/tmp/go-cache'
+                    // Using tmpfs instead of volume mount to avoid permission issues
+                    args '--user root -e HOME=/tmp -e GOCACHE=/tmp/go-cache -e GOPATH=/go'
                 }
-            }
-            environment {
-                GOCACHE = '/tmp/go-cache'
-                GOPATH = '/go'
-                HOME = '/tmp'
             }
             steps {
                 script {
+                    // Create directory for Go cache with the right permissions
+                    sh 'mkdir -p /tmp/go-cache && chown 1000:1000 /tmp/go-cache'
+                    
                     // Debug: List all directories and files to understand repository structure
                     sh 'ls -la'
                     
-                    // Create directory for Go cache
-                    sh 'mkdir -p /tmp/go-cache'
-                    sh 'chmod 777 /tmp/go-cache'
-                    
-                    // Check if the catalog directory exists
-                    sh 'if [ -d "new-revive-catalog/catalog" ]; then echo "Directory exists"; else echo "Directory does not exist"; fi'
+                    // Now switch to the regular user for the build process
+                    sh 'su -c "cd ${WORKSPACE}/new-revive-catalog/catalog && go mod download" - jenkins 2>/dev/null || go mod download'
                     
                     // Navigate to the catalog directory
                     dir("new-revive-catalog/catalog") {
-                        // Check if go.mod exists
-                        sh 'if [ -f "go.mod" ]; then echo "go.mod found"; else echo "no go.mod found"; fi'
+                        // Display go.mod content
+                        sh 'cat go.mod || echo "go.mod not found"'
                         
-                        // Display go.mod content if it exists
-                        sh 'if [ -f "go.mod" ]; then cat go.mod; fi'
-                        
-                        // Get dependencies (with verbose output for debugging)
-                        sh 'go mod download -x'
-                        
-                        // Build with verbose output for debugging
-                        sh 'go build -v .'
-                        
-                        // Check if there are test files before attempting to run tests
+                        // Try to build without switching user first
                         sh '''
+                            # Build the Go code
+                            go build -v .
+                            
+                            # Check if there are test files and run tests if found
                             if ls *_test.go 1> /dev/null 2>&1; then
                                 go test -v .
                             else
