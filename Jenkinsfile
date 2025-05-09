@@ -29,7 +29,7 @@ pipeline {
                 }
             }
             steps {
-                dir('/new-revive-cart/cart') {
+                dir('new-revive-cart/cart') {
                     sh 'mvn clean install -DskipTests'
                 }
             }
@@ -43,7 +43,7 @@ pipeline {
                 }
             }
             steps {
-                dir('/new-revive-cart/cart') {
+                dir('new-revive-cart/cart') {
                     sh 'mvn test'
                 }
             }
@@ -57,7 +57,7 @@ pipeline {
                 }
             }
             steps {
-                dir('/new-revive-cart/cart') {
+                dir('new-revive-cart/cart') {
                     sh 'mvn package'
                 }
             }
