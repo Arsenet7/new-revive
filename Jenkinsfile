@@ -26,24 +26,28 @@ pipeline {
         stage('Build and Test') {
             agent {
                 docker {
-                    image 'maven:3.8-openjdk-11'
+                    image 'maven:3.8-openjdk-17'
                     reuseNode true
                 }
             }
             steps {
                 echo 'Building the project with Maven...'
-                sh 'mvn clean compile'
-                
-                echo 'Running Maven tests...'
-                sh 'mvn test'
-                
-                echo 'Packaging the application...'
-                sh 'mvn package -DskipTests'
+                dir('revive-orders/orders') {
+                    sh 'mvn clean compile'
+                    
+                    echo 'Running Maven tests...'
+                    sh 'mvn test'
+                    
+                    echo 'Packaging the application...'
+                    sh 'mvn package -DskipTests'
+                }
             }
             post {
                 success {
-                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-                    junit 'target/surefire-reports/*.xml'
+                    dir('revive-orders/orders') {
+                        archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                        junit 'target/surefire-reports/*.xml'
+                    }
                 }
             }
         }
