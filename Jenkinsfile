@@ -28,18 +28,17 @@ pipeline {
             steps {
                 script {
                     // Create directory for Go cache with the right permissions
-                    sh 'mkdir -p /tmp/go-cache && chown 1000:1000 /tmp/go-cache'
+                    
                     
                     // Debug: List all directories and files to understand repository structure
                     sh 'ls -la'
                     
                     // Now switch to the regular user for the build process
-                    sh 'su -c "cd ${WORKSPACE}/new-revive-catalog/catalog && go mod download" - jenkins 2>/dev/null || go mod download'
                     
                     // Navigate to the catalog directory
                     dir("new-revive-catalog/catalog") {
                         // Display go.mod content
-                        sh 'cat go.mod || echo "go.mod not found"'
+                        
                         
                         // Try to build without switching user first
                         sh '''
