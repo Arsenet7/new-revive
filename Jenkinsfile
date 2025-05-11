@@ -19,7 +19,6 @@ pipeline {
                 
                 // List workspace contents to debug
                 sh 'ls -la'
-                sh 'find . -name "nginx.conf" || echo "nginx.conf not found"'
             }
         }
         
@@ -27,53 +26,34 @@ pipeline {
             steps {
                 echo 'Building the application...'
                 
-                // Check if the application directory exists
-                sh 'if [ -d "new-revive-asset/asset" ]; then echo "Directory found"; else echo "Directory not found"; fi'
+                // Find all asset or assets directories
+                sh 'find . -type d -name "asset*" -ls'
                 
-                // Build application if directory exists
-                script {
-                    if (fileExists('new-revive-asset/asset')) {
-                        dir('new-revive-asset/asset') {
-                            sh 'ls -la'  // List files to verify checkout
-                            // Add compilation or build steps if needed
-                        }
-                    } else {
-                        echo "Warning: Application directory not found, checking alternative locations..."
-                        sh 'find . -type d -name "asset" || echo "No asset directory found"'
-                    }
-                }
+                // Find all files in the repository
+                sh 'find . -type f -not -path "*/\\.*" | sort'
             }
         }
         
-        stage('Nginx Configuration') {
+        stage('Process Nginx Configuration') {
             steps {
-                echo 'Handling Nginx configuration...'
+                echo 'Processing Nginx configuration...'
                 
-                // Find nginx.conf file first
                 script {
                     def nginxConfPath = sh(script: 'find . -name "nginx.conf" | head -1', returnStdout: true).trim()
                     
                     if (nginxConfPath) {
                         echo "Found nginx.conf at: ${nginxConfPath}"
                         
-                        // Check if nginx is installed
-                        def nginxInstalled = sh(script: 'which nginx || echo "not installed"', returnStdout: true).trim()
+                        // Create a directory to store configuration files
+                        sh 'mkdir -p config_files'
                         
-                        if (nginxInstalled != "not installed") {
-                            // Validate nginx configuration if nginx is installed
-                            sh "nginx -t -c ${nginxConfPath} || echo 'Nginx config test failed but continuing'"
-                        } else {
-                            echo "Nginx not installed, skipping validation"
-                        }
+                        // Copy nginx.conf to the config_files directory
+                        sh "cp ${nginxConfPath} config_files/"
                         
-                        // Backup existing nginx.conf if it exists
-                        sh 'if [ -f /etc/nginx/nginx.conf ]; then sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup.$(date +%Y%m%d%H%M%S); fi'
+                        // Just to verify the content
+                        sh "cat ${nginxConfPath}"
                         
-                        // Copy nginx.conf to nginx config directory
-                        sh "sudo cp ${nginxConfPath} /etc/nginx/nginx.conf"
-                        
-                        // Try to reload nginx
-                        sh 'sudo service nginx reload || sudo service nginx restart || echo "Failed to restart nginx, may not be installed"'
+                        echo "Nginx configuration file processed and stored in config_files directory"
                     } else {
                         error "nginx.conf not found in the workspace"
                     }
@@ -81,34 +61,47 @@ pipeline {
             }
         }
         
-        stage('Deploy') {
+        stage('Deploy Application') {
             steps {
-                echo 'Deploying the application...'
+                echo 'Preparing deployment...'
                 
-                // Find asset directory
                 script {
-                    def assetDirPath = sh(script: 'find . -type d -name "asset" | head -1', returnStdout: true).trim()
+                    // First try to find the assets directory (with 's')
+                    def assetDirPath = sh(script: 'find . -type d -name "assets" | head -1', returnStdout: true).trim()
+                    
+                    // If not found, try the asset directory (without 's')
+                    if (!assetDirPath) {
+                        assetDirPath = sh(script: 'find . -type d -name "asset" | head -1', returnStdout: true).trim()
+                    }
                     
                     if (assetDirPath) {
-                        echo "Found asset directory at: ${assetDirPath}"
+                        echo "Found assets directory at: ${assetDirPath}"
                         
-                        // Deploy the application from the found asset directory
-                        dir(assetDirPath) {
-                            sh 'ls -la'  // List files in the asset directory
-                            
-                            // Create destination directory if it doesn't exist
-                            sh 'sudo mkdir -p /var/www/new-revive/'
-                            
-                            // Copy application files
-                            sh 'sudo cp -r . /var/www/new-revive/'
-                            
-                            // Set appropriate permissions
-                            sh 'sudo chown -R www-data:www-data /var/www/new-revive/ || echo "Failed to set permissions, www-data user might not exist"'
-                        }
+                        // Create a directory to store application files
+                        sh 'mkdir -p deployment/app'
+                        
+                        // Copy application files to the deployment directory
+                        sh "cp -r ${assetDirPath}/* deployment/app/ || echo 'Copy may have failed if directory is empty'"
+                        
+                        // List files in the deployment directory
+                        sh 'ls -la deployment/app/'
+                        
+                        echo "Application files prepared for deployment in deployment/app directory"
                     } else {
-                        error "Asset directory not found in the workspace"
+                        echo "Warning: Asset directory not found, continuing anyway..."
                     }
                 }
+            }
+        }
+        
+        stage('Archive Artifacts') {
+            steps {
+                echo 'Archiving artifacts...'
+                
+                // Archive the config_files and deployment directories as artifacts
+                archiveArtifacts artifacts: 'config_files/**/*,deployment/**/*', allowEmptyArchive: true
+                
+                echo "Artifacts archived successfully"
             }
         }
     }
@@ -119,10 +112,16 @@ pipeline {
         }
         failure {
             echo 'Pipeline execution failed!'
+            
+            // Archive any available logs or output
+            script {
+                sh 'find . -name "*.log" -o -name "*.out" | xargs tar -czf logs.tar.gz || echo "No logs found"'
+                archiveArtifacts artifacts: 'logs.tar.gz', allowEmptyArchive: true
+            }
         }
         always {
             echo 'Cleaning workspace...'
-            cleanWs()
+            cleanWs(cleanWhenNotBuilt: false, deleteDirs: true, disableDeferredWipeout: true)
         }
     }
 }
