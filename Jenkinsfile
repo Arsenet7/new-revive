@@ -186,10 +186,7 @@ pipeline {
         }
         
         stage('Deploy') {
-            when {
-                branch 'main'
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
+           
             steps {
                 echo 'Deploying the application...'
                 // Add your deployment steps here
