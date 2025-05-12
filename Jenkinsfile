@@ -2,21 +2,23 @@ pipeline {
     agent {
         label 'new-revive-agent'
     }
-
-    environment {
-                SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-            }
-
-
     
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 2, unit: 'HOURS')
+        timestamps()
+    }
+    
+    environment {
+        SONAR_PROJECT_KEY = 'new-revive-ui'
+        SONAR_PROJECT_NAME = 'New Revive UI'
+        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+    }
     
     stages {
         stage('Checkout') {
             steps {
-                // Clean workspace before checkout
                 cleanWs()
-                
-                // Checkout the repository using the credential ID
                 checkout([
                     $class: 'GitSCM', 
                     branches: [[name: 'ui']], 
@@ -42,20 +44,12 @@ pipeline {
                 sh 'mvn --version'
                 sh '''
                     cd new-revive-ui/ui
-                    mvn clean package
+                    mvn clean compile
                 '''
-            }
-            post {
-                success {
-                    sh '''
-                        cd new-revive-ui/ui
-                    '''
-                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
-                }
             }
         }
         
-        stage('Test') {
+        stage('Test with Coverage') {
             agent {
                 docker {
                     image 'maven:3.8-openjdk-17'
@@ -65,32 +59,77 @@ pipeline {
             steps {
                 sh '''
                     cd new-revive-ui/ui
-                    mvn test
+                    mvn test jacoco:report
                 '''
             }
             post {
                 always {
-                    sh '''
-                        cd new-revive-ui/ui
-                        mkdir -p ${WORKSPACE}/test-reports
-                    '''
+                    junit 'new-revive-ui/ui/target/surefire-reports/**/*.xml'
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'new-revive-ui/ui/target/site/jacoco',
+                        reportFiles: 'index.html',
+                        reportName: 'JaCoCo Coverage Report'
+                    ])
+                }
+            }
+        }
+        
+        stage('Static Code Analysis') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
+            parallel {
+                stage('Checkstyle') {
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn checkstyle:check || true
+                            '''
+                        }
+                    }
+                }
+                stage('PMD') {
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn pmd:pmd || true
+                            '''
+                        }
+                    }
+                }
+                stage('SpotBugs') {
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn spotbugs:check || true
+                            '''
+                        }
+                    }
                 }
             }
         }
         
         stage('SonarQube Analysis') {
-           
+            
             steps {
                 script {
-                    // Using withSonarQubeEnv wrapper to configure SonarQube environment
                     withSonarQubeEnv('sonar') {
-                        // Using withCredentials to securely pass SonarQube credentials
                         withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
                             sh '''
                                 cd new-revive-ui/ui
+                                
                                 ${SCANNER_HOME}/bin/sonar-scanner \
-                                    -Dsonar.projectKey=new-revive-ui \
-                                    -Dsonar.projectName="New Revive UI" \
+                                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                    -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
                                     -Dsonar.projectVersion=${BUILD_NUMBER} \
                                     -Dsonar.sources=src/main/java \
                                     -Dsonar.java.binaries=target/classes \
@@ -98,6 +137,14 @@ pipeline {
                                     -Dsonar.java.test.binaries=target/test-classes \
                                     -Dsonar.junit.reportPaths=target/surefire-reports \
                                     -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+                                    -Dsonar.language=java \
+                                    -Dsonar.java.coveragePlugin=jacoco \
+                                    -Dsonar.exclusions=**/*Test.java,**/*Config.java,**/model/**,**/entity/** \
+                                    -Dsonar.test.inclusions=**/*Test.java \
+                                    -Dsonar.dynamicAnalysis=reuseReports \
+                                    -Dsonar.checkstyle.reportPaths=target/checkstyle-result.xml \
+                                    -Dsonar.pmd.reportPaths=target/pmd.xml \
+                                    -Dsonar.findbugs.reportPaths=target/spotbugsXml.xml \
                                     -Dsonar.login=${SONAR_TOKEN}
                             '''
                         }
@@ -109,18 +156,47 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 script {
-                    // Wait for the Quality Gate result
-                    timeout(time: 1, unit: 'HOURS') {
+                    // Adjusted timeout to 15 minutes
+                    timeout(time: 15, unit: 'MINUTES') {
                         def qg = waitForQualityGate()
                         if (qg.status != 'OK') {
                             error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                        } else {
+                            echo "Quality Gate passed with status: ${qg.status}"
                         }
                     }
                 }
             }
         }
         
+        stage('Package') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                sh '''
+                    cd new-revive-ui/ui
+                    mvn package -DskipTests
+                '''
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
+                }
+            }
+        }
+        
         stage('Deploy') {
+            when {
+                branch 'main'
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
             steps {
                 echo 'Deploying the application...'
                 // Add your deployment steps here
@@ -131,9 +207,30 @@ pipeline {
     post {
         success {
             echo 'Pipeline executed successfully!'
+            script {
+                def sonarUrl = "http://18.222.118.105:9000/dashboard?id=${SONAR_PROJECT_KEY}"
+                echo "SonarQube Dashboard: ${sonarUrl}"
+                
+                // Optional: Send success notification
+                // slackSend(color: 'good', message: "✅ Build Successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}")
+            }
         }
         failure {
             echo 'Pipeline execution failed!'
+            script {
+                def sonarUrl = "http://18.222.118.105:9000/project/issues?id=${SONAR_PROJECT_KEY}&resolved=false"
+                echo "Check Quality Issues: ${sonarUrl}"
+                
+                // Optional: Send failure notification
+                // emailext (
+                //     subject: "Build Failed: ${currentBuild.fullDisplayName}",
+                //     body: "Build failed. Check the logs at: ${BUILD_URL}",
+                //     to: 'your-email@example.com'
+                // )
+            }
+        }
+        unstable {
+            echo 'Pipeline execution completed with warnings!'
         }
         always {
             echo 'Cleaning workspace...'
