@@ -2,16 +2,13 @@ pipeline {
     agent {
         label 'new-revive-agent'
     }
-    
+
     environment {
                 SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
             }
 
 
-    tools {
-        // Define tools if needed (SonarQube Scanner, Maven, etc.)
-        // Example: maven 'Maven-3.8'
-    }
+    
     
     stages {
         stage('Checkout') {
