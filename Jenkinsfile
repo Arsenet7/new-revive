@@ -78,12 +78,7 @@ pipeline {
         }
         
         stage('Static Code Analysis') {
-            agent {
-                docker {
-                    image 'maven:3.8-openjdk-17'
-                    reuseNode true
-                }
-            }
+            
             parallel {
                 stage('Checkstyle') {
                     steps {
