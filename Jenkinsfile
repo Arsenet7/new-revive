@@ -171,9 +171,7 @@ pipeline {
                     reuseNode true
                 }
             }
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
+            
             steps {
                 sh '''
                     cd new-revive-ui/ui
