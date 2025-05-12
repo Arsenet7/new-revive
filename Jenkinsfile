@@ -59,23 +59,10 @@ pipeline {
             steps {
                 sh '''
                     cd new-revive-ui/ui
-                    mvn test jacoco:report
+                    mvn test 
                 '''
             }
-            post {
-                always {
-                    junit 'new-revive-ui/ui/target/surefire-reports/**/*.xml'
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'new-revive-ui/ui/target/site/jacoco',
-                        reportFiles: 'index.html',
-                        reportName: 'JaCoCo Coverage Report'
-                    ])
-                }
-            }
-        }
+            
         
         stage('Static Code Analysis') {
             
