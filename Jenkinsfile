@@ -46,7 +46,7 @@ pipeline {
                         withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
                             sh '''
                                 cd new-revive-catalog/catalog
-                                ${scannerHome}/bin/sonar-scanner \
+                                ${SCANNER_HOME}/bin/sonar-scanner \
                                     -Dsonar.projectKey=new-revive-catalog \
                                     -Dsonar.projectName="New Revive Catalog" \
                                     -Dsonar.sources=. \
