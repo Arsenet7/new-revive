@@ -34,6 +34,40 @@ pipeline {
             }
         }
         
+        stage('SonarQube Analysis') {
+            steps {
+                echo 'Running SonarQube analysis...'
+                
+                withSonarQubeEnv('sonar') {
+                    withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
+                        script {
+                            // Run SonarQube scanner
+                            sh '''
+                                sonar-scanner \
+                                    -Dsonar.token=${SONAR_TOKEN} \
+                                    -Dsonar.projectKey=new-revive \
+                                    -Dsonar.projectName="New Revive" \
+                                    -Dsonar.projectVersion=1.0 \
+                                    -Dsonar.sources=. \
+                                    -Dsonar.exclusions="**/node_modules/**,**/target/**,**/build/**" \
+                                    -Dsonar.coverage.exclusions="**/test/**,**/tests/**"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                echo 'Checking SonarQube Quality Gate...'
+                
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        
         stage('Process Nginx Configuration') {
             steps {
                 echo 'Processing Nginx configuration...'
