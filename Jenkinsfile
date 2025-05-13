@@ -3,6 +3,13 @@ pipeline {
         label 'new-revive-agent'
     }
     
+    environment {
+        // Define Docker registry and image name
+        DOCKER_REGISTRY = 'dockerhub.io'
+        DOCKER_IMAGE = 'arsenet10/new-revive'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+    }
+    
     stages {
         stage('Checkout') {
             steps {
@@ -109,12 +116,41 @@ pipeline {
                 }
             }
         }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Assuming Dockerfile is in the cart directory
+                    dir('new-revive-cart/cart') {
+                        // Build the Docker image
+                        docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                        
+                        // Also tag as latest
+                        docker.build("${DOCKER_IMAGE}:latest")
+                    }
+                }
+            }
+        }
+        
+        stage('Push to DockerHub') {
+            steps {
+                script {
+                    // Use DockerHub credentials
+                    docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-ars-id') {
+                        // Push both the versioned tag and latest
+                        docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}").push()
+                        docker.image("${DOCKER_IMAGE}:latest").push()
+                    }
+                }
+            }
+        }
     }
     
     post {
         success {
             echo 'Pipeline executed successfully!'
             archiveArtifacts artifacts: 'new-revive-cart/cart/target/*.jar', fingerprint: true
+            echo "Docker image pushed: ${DOCKER_IMAGE}:${DOCKER_TAG}"
         }
         failure {
             echo 'Pipeline execution failed!'
