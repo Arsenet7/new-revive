@@ -3,8 +3,8 @@ pipeline {
         label 'new-revive-agent'
     }
     environment {
-                SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-            }
+        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+    }
     stages {
         stage('Checkout') {
             steps {
@@ -93,6 +93,21 @@ pipeline {
                             }
                         }
                     }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                script {
+                    // Wait for the Quality Gate result
+                    def qualitygate = waitForQualityGate()
+                    
+                    if (qualitygate.status != 'OK') {
+                        error "Pipeline aborted due to quality gate failure: ${qualitygate.status}"
+                    }
+                    
+                    echo "Quality Gate passed with status: ${qualitygate.status}"
                 }
             }
         }
