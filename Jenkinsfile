@@ -163,76 +163,25 @@ pipeline {
             }
         }
         
-        stage('Quality Gate') {
+        stage("Quality Gate") {
             steps {
-                script {
-                    timeout(time: 5, unit: 'MINUTES') {
-                        def qg = waitForQualityGate()
-                        if (qg.status == 'OK') {
-                            echo "Quality Gate passed with status: ${qg.status}"
-                        } else {
-                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Package') {
-            agent {
-                docker {
-                    image 'maven:3.8-openjdk-17'
-                    reuseNode true
-                }
-            }
-            steps {
-                sh '''
-                    cd new-revive-ui/ui
-                    mvn package -DskipTests
-                    echo "Listing contents of target directory:"
-                    ls -la target/
-                    echo "Looking for JAR files:"
-                    find . -name "*.jar" -type f
-                '''
-            }
-            post {
-                success {
-                    script {
-                        // Check if the JAR files exist before archiving
-                        def jarFiles = sh(script: 'find new-revive-ui/ui/target -name "*.jar" -type f', returnStdout: true).trim()
-                        if (jarFiles) {
-                            echo "Found JAR files: ${jarFiles}"
-                            archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
-                        } else {
-                            echo "No JAR files found in target directory"
-                        }
-                    }
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
     }
-
+    
     post {
         success {
-            echo 'Pipeline executed successfully!'
-            script {
-                def sonarUrl = "http://18.224.30.72:9000/dashboard?id=${SONAR_PROJECT_KEY}"
-                echo "SonarQube Dashboard: ${sonarUrl}"
-                // slackSend(color: 'good', message: "✅ Build Successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}")
-            }
+            echo 'Build, tests, and SonarQube analysis completed successfully!'
         }
         failure {
-            echo 'Pipeline execution failed!'
-            echo "Current stage: ${env.STAGE_NAME}"
-            sh 'pwd'
-            sh 'ls -la'
-        }
-        unstable {
-            echo 'Pipeline execution completed with warnings!'
+            echo 'Build, tests, or SonarQube analysis failed!'
         }
         always {
-            echo 'Cleaning workspace...'
             cleanWs()
         }
     }
 }
+        
