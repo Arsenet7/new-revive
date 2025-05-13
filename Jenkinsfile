@@ -4,11 +4,8 @@ pipeline {
     }
     environment {
                 SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-            }
-    
-    
-    environment {
-        SONAR_SCANNER_VERSION = '5.0.1.3006'
+            
+                SONAR_SCANNER_VERSION = '5.0.1.3006'
     }
     
     stages {
