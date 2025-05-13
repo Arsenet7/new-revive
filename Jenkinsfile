@@ -5,10 +5,7 @@ pipeline {
     environment {
                 SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
             }
-    stages {pipeline {
-    agent {
-        label 'new-revive-agent'
-    }
+    
     
     environment {
         SONAR_SCANNER_VERSION = '5.0.1.3006'
