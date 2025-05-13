@@ -71,42 +71,23 @@ pipeline {
             }
         }
         
-        stage('Build Docker Images') {
-            parallel {
-                stage('Build Catalog Image') {
-                    steps {
-                        dir('new-revive-catalog/catalog') {
-                            sh """
-                                docker build -t ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} -f Dockerfile .
-                                docker tag ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} ${DOCKER_IMAGE_CATALOG}:latest
-                            """
-                        }
-                    }
-                }
-                
-                stage('Build DB Image') {
-                    steps {
-                        dir('new-revive-catalog/catalog') {
-                            sh """
-                                docker build -t ${DOCKER_IMAGE_DB}:${BUILD_VERSION} -f Dockerfile-db .
-                                docker tag ${DOCKER_IMAGE_DB}:${BUILD_VERSION} ${DOCKER_IMAGE_DB}:latest
-                            """
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('Push Docker Images') {
+        stage('Build and Push Docker Images') {
             steps {
                 script {
                     docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-ars-id') {
-                        sh """
-                            docker push ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION}
-                            docker push ${DOCKER_IMAGE_CATALOG}:latest
-                            docker push ${DOCKER_IMAGE_DB}:${BUILD_VERSION}
-                            docker push ${DOCKER_IMAGE_DB}:latest
-                        """
+                        // Build and push catalog image
+                        dir('new-revive-catalog/catalog') {
+                            def catalogImage = docker.build("${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION}", "-f Dockerfile .")
+                            catalogImage.push()
+                            catalogImage.push('latest')
+                        }
+                        
+                        // Build and push db image
+                        dir('new-revive-catalog/catalog') {
+                            def dbImage = docker.build("${DOCKER_IMAGE_DB}:${BUILD_VERSION}", "-f Dockerfile-db .")
+                            dbImage.push()
+                            dbImage.push('latest')
+                        }
                     }
                 }
             }
@@ -121,13 +102,15 @@ pipeline {
             echo 'Build, tests, SonarQube analysis, or Docker images push failed!'
         }
         always {
-            // Clean up Docker images to save space
-            sh """
-                docker rmi ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} || true
-                docker rmi ${DOCKER_IMAGE_CATALOG}:latest || true
-                docker rmi ${DOCKER_IMAGE_DB}:${BUILD_VERSION} || true
-                docker rmi ${DOCKER_IMAGE_DB}:latest || true
-            """
+            // Clean up local images
+            script {
+                sh """
+                    docker rmi ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} || true
+                    docker rmi ${DOCKER_IMAGE_CATALOG}:latest || true
+                    docker rmi ${DOCKER_IMAGE_DB}:${BUILD_VERSION} || true
+                    docker rmi ${DOCKER_IMAGE_DB}:latest || true
+                """
+            }
             cleanWs()
         }
     }
