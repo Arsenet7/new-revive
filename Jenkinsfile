@@ -52,6 +52,32 @@ pipeline {
             }
         }
         
+        stage('SonarQube Analysis') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
+            steps {
+                echo 'Running SonarQube Analysis...'
+                withSonarQubeEnv('sonar') {
+                    dir('new-revive-orders/orders') {
+                        sh 'mvn sonar:sonar'
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                echo 'Waiting for SonarQube Quality Gate...'
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        
         stage('Deploy') {
             steps {
                 echo 'Deploying the application...'
