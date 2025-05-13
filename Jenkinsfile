@@ -51,8 +51,7 @@ pipeline {
                                     -Dsonar.sources=. \
                                     -Dsonar.exclusions="**/*_test.go,**/vendor/**" \
                                     -Dsonar.go.coverage.reportPaths=coverage.out \
-                                    -Dsonar.login=${SONAR_TOKEN} \
-                                    -Dsonar.host.url=${SONAR_URL}
+                                    -Dsonar.login=${SONAR_TOKEN} 
                             '''
                         }
                     }
