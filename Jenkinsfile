@@ -6,7 +6,8 @@ pipeline {
     environment {
         // Define Docker registry and image name
         DOCKER_REGISTRY = 'dockerhub.io'
-        DOCKER_IMAGE = 'arsenet10/new-revive'
+        DOCKER_IMAGE_CART = 'arsenet10/new-revive-cart'
+        DOCKER_IMAGE_DYNAMODB = 'arsenet10/new-revive-cart-dynamodb'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
     }
     
@@ -117,16 +118,17 @@ pipeline {
             }
         }
         
-        stage('Build Docker Image') {
+        stage('Build Docker Images') {
             steps {
                 script {
-                    // Assuming Dockerfile is in the cart directory
                     dir('new-revive-cart/cart') {
-                        // Build the Docker image
-                        docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}")
+                        // Build the main cart service Docker image
+                        def cartImage = docker.build("${DOCKER_IMAGE_CART}:${DOCKER_TAG}", "-f Dockerfile .")
+                        docker.build("${DOCKER_IMAGE_CART}:latest", "-f Dockerfile .")
                         
-                        // Also tag as latest
-                        docker.build("${DOCKER_IMAGE}:latest")
+                        // Build the DynamoDB Docker image
+                        def dynamodbImage = docker.build("${DOCKER_IMAGE_DYNAMODB}:${DOCKER_TAG}", "-f Dockerfile-dynamodb .")
+                        docker.build("${DOCKER_IMAGE_DYNAMODB}:latest", "-f Dockerfile-dynamodb .")
                     }
                 }
             }
@@ -137,9 +139,13 @@ pipeline {
                 script {
                     // Use DockerHub credentials
                     docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-ars-id') {
-                        // Push both the versioned tag and latest
-                        docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}").push()
-                        docker.image("${DOCKER_IMAGE}:latest").push()
+                        // Push cart service images
+                        docker.image("${DOCKER_IMAGE_CART}:${DOCKER_TAG}").push()
+                        docker.image("${DOCKER_IMAGE_CART}:latest").push()
+                        
+                        // Push DynamoDB images
+                        docker.image("${DOCKER_IMAGE_DYNAMODB}:${DOCKER_TAG}").push()
+                        docker.image("${DOCKER_IMAGE_DYNAMODB}:latest").push()
                     }
                 }
             }
@@ -150,7 +156,9 @@ pipeline {
         success {
             echo 'Pipeline executed successfully!'
             archiveArtifacts artifacts: 'new-revive-cart/cart/target/*.jar', fingerprint: true
-            echo "Docker image pushed: ${DOCKER_IMAGE}:${DOCKER_TAG}"
+            echo "Docker images pushed:"
+            echo "  - ${DOCKER_IMAGE_CART}:${DOCKER_TAG}"
+            echo "  - ${DOCKER_IMAGE_DYNAMODB}:${DOCKER_TAG}"
         }
         failure {
             echo 'Pipeline execution failed!'
