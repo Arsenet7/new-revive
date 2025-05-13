@@ -3,8 +3,11 @@ pipeline {
         label 'new-revive-agent'
     }
     environment {
-                SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-            }
+        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+        DOCKERHUB_USERNAME = 'Arsenet10'
+        IMAGE_NAME = "${DOCKERHUB_USERNAME}/new-revive"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
     stages {
         stage('Checkout') {
             steps {
@@ -130,6 +133,49 @@ pipeline {
             }
         }
         
+        stage('Docker Build') {
+            steps {
+                echo 'Building Docker image...'
+                
+                script {
+                    // Find the Dockerfile
+                    def dockerfilePath = sh(script: 'find . -name "Dockerfile" | head -1', returnStdout: true).trim()
+                    
+                    if (dockerfilePath) {
+                        echo "Found Dockerfile at: ${dockerfilePath}"
+                        
+                        // Get the directory containing the Dockerfile
+                        def dockerfileDir = sh(script: "dirname ${dockerfilePath}", returnStdout: true).trim()
+                        
+                        // Build the Docker image
+                        sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest ${dockerfileDir}"
+                        
+                        echo "Docker image built successfully"
+                    } else {
+                        error "Dockerfile not found in the workspace"
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Push to DockerHub') {
+            steps {
+                echo 'Pushing Docker image to DockerHub...'
+                
+                script {
+                    // Push to DockerHub using credentials
+                    docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-ars-id') {
+                        sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                        sh "docker push ${IMAGE_NAME}:latest"
+                    }
+                    
+                    echo "Docker image pushed successfully to DockerHub"
+                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "Image: ${IMAGE_NAME}:latest"
+                }
+            }
+        }
+        
         stage('Archive Artifacts') {
             steps {
                 echo 'Archiving artifacts...'
@@ -140,11 +186,26 @@ pipeline {
                 echo "Artifacts archived successfully"
             }
         }
+        
+        stage('Cleanup Docker Images') {
+            steps {
+                echo 'Cleaning up local Docker images...'
+                
+                script {
+                    // Remove the local Docker images to save space
+                    sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
+                    sh "docker rmi ${IMAGE_NAME}:latest || true"
+                    
+                    echo "Local Docker images cleaned up"
+                }
+            }
+        }
     }
     
     post {
         success {
             echo 'Pipeline executed successfully!'
+            echo "Docker image available at: ${IMAGE_NAME}:${IMAGE_TAG}"
         }
         failure {
             echo 'Pipeline execution failed!'
