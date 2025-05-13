@@ -38,18 +38,14 @@ pipeline {
                 docker {
                     image 'maven:3.8-openjdk-17'
                     reuseNode true
-                    args '-e JAVA_HOME=/opt/java/openjdk'
                 }
             }
             steps {
-                dir('new-revive-ui/ui') {
-                    sh '''
-                        echo "JAVA_HOME is: $JAVA_HOME"
-                        java -version
-                        mvn --version
-                        mvn clean install -DskipTests
-                    '''
-                }
+                sh 'mvn --version'
+                sh '''
+                    cd new-revive-ui/ui
+                    mvn clean compile
+                '''
             }
         }
         
@@ -58,13 +54,13 @@ pipeline {
                 docker {
                     image 'maven:3.8-openjdk-17'
                     reuseNode true
-                    args '-e JAVA_HOME=/opt/java/openjdk'
                 }
             }
             steps {
-                dir('new-revive-ui/ui') {
-                    sh 'mvn test'
-                }
+                sh '''
+                    cd new-revive-ui/ui
+                    mvn test 
+                '''
             }
             post {
                 always {
@@ -88,14 +84,14 @@ pipeline {
                         docker {
                             image 'maven:3.8-openjdk-17'
                             reuseNode true
-                            args '-e JAVA_HOME=/opt/java/openjdk'
                         }
                     }
                     steps {
                         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                            dir('new-revive-ui/ui') {
-                                sh 'mvn checkstyle:check || true'
-                            }
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn checkstyle:check || true
+                            '''
                         }
                     }
                 }
@@ -104,14 +100,14 @@ pipeline {
                         docker {
                             image 'maven:3.8-openjdk-17'
                             reuseNode true
-                            args '-e JAVA_HOME=/opt/java/openjdk'
                         }
                     }
                     steps {
                         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                            dir('new-revive-ui/ui') {
-                                sh 'mvn pmd:pmd || true'
-                            }
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn pmd:pmd || true
+                            '''
                         }
                     }
                 }
@@ -120,14 +116,14 @@ pipeline {
                         docker {
                             image 'maven:3.8-openjdk-17'
                             reuseNode true
-                            args '-e JAVA_HOME=/opt/java/openjdk'
                         }
                     }
                     steps {
                         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                            dir('new-revive-ui/ui') {
-                                sh 'mvn spotbugs:check || true'
-                            }
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn spotbugs:check || true
+                            '''
                         }
                     }
                 }
@@ -135,20 +131,13 @@ pipeline {
         }
         
         stage('SonarQube Analysis') {
-            agent {
-                docker {
-                    image 'maven:3.8-openjdk-17'
-                    reuseNode true
-                    args '-e JAVA_HOME=/opt/java/openjdk'
-                }
-            }
             steps {
                 script {
                     withSonarQubeEnv('sonar') {
                         withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
-                            dir('new-revive-ui/ui') {
-                                sh """
-                                    mvn sonar:sonar \
+                            sh '''
+                                cd new-revive-ui/ui
+                                ${SCANNER_HOME}/bin/sonar-scanner \
                                     -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                     -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
                                     -Dsonar.projectVersion=${BUILD_NUMBER} \
@@ -165,10 +154,9 @@ pipeline {
                                     -Dsonar.dynamicAnalysis=reuseReports \
                                     -Dsonar.checkstyle.reportPaths=target/checkstyle-result.xml \
                                     -Dsonar.pmd.reportPaths=target/pmd.xml \
-                                    -Dsonar.spotbugs.reportPaths=target/spotbugsXml.xml \
+                                    -Dsonar.findbugs.reportPaths=target/spotbugsXml.xml \
                                     -Dsonar.login=${SONAR_TOKEN}
-                                """
-                            }
+                            '''
                         }
                     }
                 }
@@ -196,3 +184,4 @@ pipeline {
         }
     }
 }
+        
