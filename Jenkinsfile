@@ -154,10 +154,10 @@ pipeline {
                     // Adjusted timeout to 15 minutes
                     timeout(time: 5, unit: 'MINUTES') {
                         def qg = waitForQualityGate()
-                        if (qg.status != 'OK') {
-                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
-                        } else {
+                        if (qg.status == 'OK') {
                             echo "Quality Gate passed with status: ${qg.status}"
+                        } else {
+                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
                         }
                     }
                 }
@@ -184,15 +184,6 @@ pipeline {
                 }
             }
         }
-        
-        stage('Deploy') {
-           
-            steps {
-                echo 'Deploying the application...'
-                // Add your deployment steps here
-            }
-        }
-    }
     
     post {
         success {
