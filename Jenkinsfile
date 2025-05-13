@@ -78,7 +78,6 @@ pipeline {
         }
         
         stage('Static Code Analysis') {
-            
             parallel {
                 stage('Checkstyle') {
                     steps {
@@ -114,14 +113,12 @@ pipeline {
         }
         
         stage('SonarQube Analysis') {
-            
             steps {
                 script {
                     withSonarQubeEnv('sonar') {
                         withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
                             sh '''
                                 cd new-revive-ui/ui
-                                
                                 ${SCANNER_HOME}/bin/sonar-scanner \
                                     -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                     -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
@@ -151,7 +148,6 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 script {
-                    // Adjusted timeout to 15 minutes
                     timeout(time: 5, unit: 'MINUTES') {
                         def qg = waitForQualityGate()
                         if (qg.status == 'OK') {
@@ -171,7 +167,6 @@ pipeline {
                     reuseNode true
                 }
             }
-            
             steps {
                 sh '''
                     cd new-revive-ui/ui
@@ -184,21 +179,19 @@ pipeline {
                 }
             }
         }
-    
+    }
+
     post {
         success {
             echo 'Pipeline executed successfully!'
             script {
                 def sonarUrl = "http://18.224.30.72:9000/dashboard?id=${SONAR_PROJECT_KEY}"
                 echo "SonarQube Dashboard: ${sonarUrl}"
-                
-                // Optional: Send success notification
                 // slackSend(color: 'good', message: "✅ Build Successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}")
             }
         }
         failure {
             echo 'Pipeline execution failed!'
-            
         }
         unstable {
             echo 'Pipeline execution completed with warnings!'
@@ -208,5 +201,4 @@ pipeline {
             cleanWs()
         }
     }
-}
 }
