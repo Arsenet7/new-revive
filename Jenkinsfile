@@ -7,8 +7,8 @@ pipeline {
         SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
         SONAR_SCANNER_VERSION = '5.0.1.3006'
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-ars-id')
-        DOCKER_IMAGE_CATALOG = 'yourdockerhubusername/new-revive-catalog'
-        DOCKER_IMAGE_DB = 'yourdockerhubusername/new-revive-catalog-db'
+        DOCKER_IMAGE_CATALOG = 'arsenet10/new-revive-catalog'
+        DOCKER_IMAGE_DB = 'arsenet10/new-revive-catalog-db'
         BUILD_VERSION = "${env.BUILD_NUMBER}"
     }
     
