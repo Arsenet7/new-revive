@@ -56,6 +56,45 @@ pipeline {
             }
         }
         
+        stage('SonarQube Analysis') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
+            environment {
+                SONAR_SCANNER = tool name: 'sonar'
+            }
+            steps {
+                withSonarQubeEnv('sonar') {
+                    dir('new-revive-cart/cart') {
+                        withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
+                            sh """
+                                mvn sonar:sonar \
+                                -Dsonar.projectKey=new-revive-cart \
+                                -Dsonar.projectName=new-revive-cart \
+                                -Dsonar.projectVersion=1.0 \
+                                -Dsonar.sources=src/main \
+                                -Dsonar.test.inclusions=src/test/java/** \
+                                -Dsonar.java.binaries=target/classes \
+                                -Dsonar.jacoco.reportPath=target/jacoco.exec \
+                                -Dsonar.login=$SONAR_TOKEN
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        
         stage('Package') {
             agent {
                 docker {
