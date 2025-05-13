@@ -12,6 +12,7 @@ pipeline {
     environment {
         SONAR_PROJECT_KEY = 'new-revive-ui'
         SONAR_PROJECT_NAME = 'New Revive UI'
+        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
     }
     
     stages {
@@ -48,7 +49,7 @@ pipeline {
             }
         }
         
-        stage('Test') {
+        stage('Test with Coverage') {
             agent {
                 docker {
                     image 'maven:3.8-openjdk-17'
@@ -58,43 +59,54 @@ pipeline {
             steps {
                 sh '''
                     cd new-revive-ui/ui
-                    mvn test
+                    mvn test 
                 '''
             }
             post {
                 always {
-                    script {
-                        // Check if test results exist before trying to publish
-                        def testResultsDir = 'new-revive-ui/ui/target/surefire-reports'
-                        if (fileExists(testResultsDir)) {
-                            def xmlFiles = sh(
-                                script: "find ${testResultsDir} -name '*.xml' 2>/dev/null || true",
-                                returnStdout: true
-                            ).trim()
-                            
-                            if (xmlFiles) {
-                                junit testResults: "${testResultsDir}/**/*.xml", 
-                                      allowEmptyResults: true
-                            } else {
-                                echo "No test results found in ${testResultsDir}"
-                            }
-                        } else {
-                            echo "Test results directory not found: ${testResultsDir}"
+                    junit 'new-revive-ui/ui/target/surefire-reports/**/*.xml'
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'new-revive-ui/ui/target/site/jacoco',
+                        reportFiles: 'index.html',
+                        reportName: 'JaCoCo Coverage Report'
+                    ])
+                }
+            }
+        }
+        
+        stage('Static Code Analysis') {
+            
+            parallel {
+                stage('Checkstyle') {
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn checkstyle:check || true
+                            '''
                         }
-                        
-                        // Check if JaCoCo report exists before trying to publish
-                        def jacocoDir = 'new-revive-ui/ui/target/site/jacoco'
-                        if (fileExists(jacocoDir) && fileExists("${jacocoDir}/index.html")) {
-                            publishHTML([
-                                allowMissing: false,
-                                alwaysLinkToLastBuild: true,
-                                keepAll: true,
-                                reportDir: jacocoDir,
-                                reportFiles: 'index.html',
-                                reportName: 'JaCoCo Coverage Report'
-                            ])
-                        } else {
-                            echo "JaCoCo report not found at ${jacocoDir}"
+                    }
+                }
+                stage('PMD') {
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn pmd:pmd || true
+                            '''
+                        }
+                    }
+                }
+                stage('SpotBugs') {
+                    steps {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh '''
+                                cd new-revive-ui/ui
+                                mvn spotbugs:check || true
+                            '''
                         }
                     }
                 }
@@ -102,12 +114,7 @@ pipeline {
         }
         
         stage('SonarQube Analysis') {
-            agent {
-                docker {
-                    image 'maven:3.8-openjdk-17'
-                    reuseNode true
-                }
-            }
+            
             steps {
                 script {
                     withSonarQubeEnv('sonar') {
@@ -115,13 +122,24 @@ pipeline {
                             sh '''
                                 cd new-revive-ui/ui
                                 
-                                # Use Maven for SonarQube analysis instead of standalone scanner
-                                mvn sonar:sonar \
+                                ${SCANNER_HOME}/bin/sonar-scanner \
                                     -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                     -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
                                     -Dsonar.projectVersion=${BUILD_NUMBER} \
                                     -Dsonar.sources=src/main/java \
                                     -Dsonar.java.binaries=target/classes \
+                                    -Dsonar.tests=src/test/java \
+                                    -Dsonar.java.test.binaries=target/test-classes \
+                                    -Dsonar.junit.reportPaths=target/surefire-reports \
+                                    -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+                                    -Dsonar.language=java \
+                                    -Dsonar.java.coveragePlugin=jacoco \
+                                    -Dsonar.exclusions=**/*Test.java,**/*Config.java,**/model/**,**/entity/** \
+                                    -Dsonar.test.inclusions=**/*Test.java \
+                                    -Dsonar.dynamicAnalysis=reuseReports \
+                                    -Dsonar.checkstyle.reportPaths=target/checkstyle-result.xml \
+                                    -Dsonar.pmd.reportPaths=target/pmd.xml \
+                                    -Dsonar.findbugs.reportPaths=target/spotbugsXml.xml \
                                     -Dsonar.login=${SONAR_TOKEN}
                             '''
                         }
@@ -133,67 +151,13 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 script {
-                    echo "Checking Quality Gate..."
-                    
-                    // Give SonarQube time to process
-                    sleep(time: 30, unit: 'SECONDS')
-                    
-                    // Try manual API check instead of waitForQualityGate
-                    withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
-                        def attempts = 0
-                        def maxAttempts = 10
-                        def qualityGateStatus = 'PENDING'
-                        
-                        while (attempts < maxAttempts && qualityGateStatus == 'PENDING') {
-                            attempts++
-                            
-                            try {
-                                def response = sh(
-                                    script: """
-                                        curl -s -u ${SONAR_TOKEN}: \
-                                        "http://18.224.30.72:9000/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}"
-                                    """,
-                                    returnStdout: true,
-                                    returnStatus: false
-                                ).trim()
-                                
-                                echo "API Response: ${response}"
-                                
-                                if (response) {
-                                    def json = readJSON(text: response)
-                                    qualityGateStatus = json.projectStatus?.status ?: 'UNKNOWN'
-                                    
-                                    echo "Attempt ${attempts}/${maxAttempts}: Quality Gate Status = ${qualityGateStatus}"
-                                    
-                                    if (qualityGateStatus in ['OK', 'WARN', 'ERROR']) {
-                                        break
-                                    }
-                                }
-                                
-                                if (attempts < maxAttempts) {
-                                    sleep(time: 15, unit: 'SECONDS')
-                                }
-                                
-                            } catch (Exception e) {
-                                echo "Error checking quality gate: ${e.message}"
-                                if (attempts >= maxAttempts) {
-                                    qualityGateStatus = 'UNKNOWN'
-                                }
-                            }
-                        }
-                        
-                        echo "Final Quality Gate Status: ${qualityGateStatus}"
-                        echo "View details at: http://18.222.118.105:9000/dashboard?id=${SONAR_PROJECT_KEY}"
-                        
-                        // Handle the status without failing the build
-                        if (qualityGateStatus == 'ERROR') {
-                            unstable("Quality Gate failed but continuing pipeline")
-                        } else if (qualityGateStatus == 'WARN') {
-                            echo "Quality Gate has warnings"
-                        } else if (qualityGateStatus == 'OK') {
-                            echo "Quality Gate passed!"
+                    // Adjusted timeout to 15 minutes
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qg = waitForQualityGate()
+                        if (qg.status != 'OK') {
+                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
                         } else {
-                            echo "Quality Gate status unknown, continuing..."
+                            echo "Quality Gate passed with status: ${qg.status}"
                         }
                     }
                 }
@@ -207,11 +171,7 @@ pipeline {
                     reuseNode true
                 }
             }
-            when {
-                not {
-                    equals expected: 'FAILURE', actual: currentBuild.result
-                }
-            }
+            
             steps {
                 sh '''
                     cd new-revive-ui/ui
@@ -220,14 +180,13 @@ pipeline {
             }
             post {
                 success {
-                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', 
-                                    fingerprint: true,
-                                    allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
                 }
             }
         }
         
         stage('Deploy') {
+           
             steps {
                 echo 'Deploying the application...'
                 // Add your deployment steps here
@@ -237,21 +196,31 @@ pipeline {
     
     post {
         success {
-            echo '✅ Pipeline executed successfully!'
+            echo 'Pipeline executed successfully!'
             script {
-                def sonarUrl = "http://18.222.118.105:9000/dashboard?id=${SONAR_PROJECT_KEY}"
+                def sonarUrl = "http://18.224.30.72:9000/dashboard?id=${SONAR_PROJECT_KEY}"
                 echo "SonarQube Dashboard: ${sonarUrl}"
+                
+                // Optional: Send success notification
+                // slackSend(color: 'good', message: "✅ Build Successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}")
             }
         }
         failure {
-            echo '❌ Pipeline execution failed!'
+            echo 'Pipeline execution failed!'
             script {
-                def sonarUrl = "http://18.222.118.105:9000/project/issues?id=${SONAR_PROJECT_KEY}&resolved=false"
+                def sonarUrl = "http://18.224.30.72:9000/project/issues?id=${SONAR_PROJECT_KEY}&resolved=false"
                 echo "Check Quality Issues: ${sonarUrl}"
+                
+                // Optional: Send failure notification
+                // emailext (
+                //     subject: "Build Failed: ${currentBuild.fullDisplayName}",
+                //     body: "Build failed. Check the logs at: ${BUILD_URL}",
+                //     to: 'your-email@example.com'
+                // )
             }
         }
         unstable {
-            echo '⚠️ Pipeline execution completed with warnings!'
+            echo 'Pipeline execution completed with warnings!'
         }
         always {
             echo 'Cleaning workspace...'
