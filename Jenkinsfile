@@ -4,7 +4,7 @@ pipeline {
     }
     environment {
         SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-        DOCKERHUB_USERNAME = 'Arsenet10'
+        DOCKERHUB_USERNAME = 'arsenet10'  // Changed to lowercase
         IMAGE_NAME = "${DOCKERHUB_USERNAME}/new-revive"
         IMAGE_TAG = "${BUILD_NUMBER}"
     }
@@ -147,7 +147,7 @@ pipeline {
                         // Get the directory containing the Dockerfile
                         def dockerfileDir = sh(script: "dirname ${dockerfilePath}", returnStdout: true).trim()
                         
-                        // Build the Docker image
+                        // Build the Docker image with lowercase username
                         sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:latest ${dockerfileDir}"
                         
                         echo "Docker image built successfully"
@@ -163,14 +163,14 @@ pipeline {
                 echo 'Pushing Docker image to DockerHub...'
                 
                 script {
-                    // Alternative method using credentials directly
+                    // Login and push to DockerHub
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-ars-id', 
                                                     usernameVariable: 'DOCKER_USER', 
                                                     passwordVariable: 'DOCKER_PASS')]) {
                         sh '''
-                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                            docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                            docker push ${IMAGE_NAME}:latest
+                            echo "${DOCKER_PASS}" | docker login --username "${DOCKER_USER}" --password-stdin docker.io
+                            docker push docker.io/${IMAGE_NAME}:${IMAGE_TAG}
+                            docker push docker.io/${IMAGE_NAME}:latest
                         '''
                     }
                     
