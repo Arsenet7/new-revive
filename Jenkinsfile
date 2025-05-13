@@ -2,7 +2,9 @@ pipeline {
     agent {
         label 'new-revive-agent'
     }
-    
+    environment {
+                SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+            }
     stages {
         stage('Checkout') {
             steps {
@@ -43,7 +45,7 @@ pipeline {
                         script {
                             // Run SonarQube scanner
                             sh '''
-                                sonar-scanner \
+                                ${SCANNER_HOME}/bin/sonar-scanner \
                                     -Dsonar.token=${SONAR_TOKEN} \
                                     -Dsonar.projectKey=new-revive \
                                     -Dsonar.projectName="New Revive" \
