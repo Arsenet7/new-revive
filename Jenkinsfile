@@ -151,7 +151,7 @@ pipeline {
                                 def response = sh(
                                     script: """
                                         curl -s -u ${SONAR_TOKEN}: \
-                                        "http://18.222.118.105:9000/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}"
+                                        "http://18.224.30.72:9000/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}"
                                     """,
                                     returnStdout: true,
                                     returnStatus: false
