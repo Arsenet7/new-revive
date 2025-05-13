@@ -199,24 +199,4 @@ pipeline {
         }
     }
 
-    post {
-        success {
-            echo 'Pipeline executed successfully!'
-            script {
-                def sonarUrl = "http://18.224.30.72:9000/dashboard?id=${SONAR_PROJECT_KEY}"
-                echo "SonarQube Dashboard: ${sonarUrl}"
-                // slackSend(color: 'good', message: "✅ Build Successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}")
-            }
-        }
-        failure {
-            echo 'Pipeline execution failed!'
-        }
-        unstable {
-            echo 'Pipeline execution completed with warnings!'
-        }
-        always {
-            echo 'Cleaning workspace...'
-            cleanWs()
-        }
-    }
-}
+}    
