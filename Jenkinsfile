@@ -82,7 +82,7 @@ pipeline {
                         withSonarQubeEnv('sonar') {
                             withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
                                 sh '''
-                                    npx sonar-scanner \
+                                    ${SCANNER_HOME}/bin/sonar-scanner \
                                     -Dsonar.projectKey=new-revive \
                                     -Dsonar.projectName="New Revive" \
                                     -Dsonar.projectVersion=1.0 \
