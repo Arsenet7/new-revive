@@ -207,17 +207,7 @@ pipeline {
         }
         failure {
             echo 'Pipeline execution failed!'
-            script {
-                def sonarUrl = "http://18.224.30.72:9000/project/issues?id=${SONAR_PROJECT_KEY}&resolved=false"
-                echo "Check Quality Issues: ${sonarUrl}"
-                
-                // Optional: Send failure notification
-                // emailext (
-                //     subject: "Build Failed: ${currentBuild.fullDisplayName}",
-                //     body: "Build failed. Check the logs at: ${BUILD_URL}",
-                //     to: 'your-email@example.com'
-                // )
-            }
+            
         }
         unstable {
             echo 'Pipeline execution completed with warnings!'
