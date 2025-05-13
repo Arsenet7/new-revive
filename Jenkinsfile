@@ -69,6 +69,38 @@ pipeline {
             }
         }
         
+        stage('SonarQube Analysis') {
+            agent {
+                docker {
+                    image 'node:18'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('new-revive-checkout/checkout') {
+                    script {
+                        withSonarQubeEnv('sonar') {
+                            withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
+                                sh '''
+                                    npx sonar-scanner \
+                                    -Dsonar.projectKey=new-revive \
+                                    -Dsonar.projectName="New Revive" \
+                                    -Dsonar.projectVersion=1.0 \
+                                    -Dsonar.sources=src \
+                                    -Dsonar.tests=src \
+                                    -Dsonar.test.inclusions="**/*.spec.ts" \
+                                    -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/coverage/**" \
+                                    -Dsonar.typescript.lcov.reportPaths=coverage/lcov.info \
+                                    -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                                    -Dsonar.login=$SONAR_TOKEN
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         stage('Check for Vulnerabilities') {
             agent {
                 docker {
