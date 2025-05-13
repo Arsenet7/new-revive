@@ -189,14 +189,50 @@ pipeline {
                 sh '''
                     cd new-revive-ui/ui
                     mvn package -DskipTests
+                    echo "Listing contents of target directory:"
+                    ls -la target/
+                    echo "Looking for JAR files:"
+                    find . -name "*.jar" -type f
                 '''
             }
             post {
                 success {
-                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
+                    script {
+                        // Check if the JAR files exist before archiving
+                        def jarFiles = sh(script: 'find new-revive-ui/ui/target -name "*.jar" -type f', returnStdout: true).trim()
+                        if (jarFiles) {
+                            echo "Found JAR files: ${jarFiles}"
+                            archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', fingerprint: true
+                        } else {
+                            echo "No JAR files found in target directory"
+                        }
+                    }
                 }
             }
         }
     }
 
-}    
+    post {
+        success {
+            echo 'Pipeline executed successfully!'
+            script {
+                def sonarUrl = "http://18.224.30.72:9000/dashboard?id=${SONAR_PROJECT_KEY}"
+                echo "SonarQube Dashboard: ${sonarUrl}"
+                // slackSend(color: 'good', message: "✅ Build Successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}")
+            }
+        }
+        failure {
+            echo 'Pipeline execution failed!'
+            echo "Current stage: ${env.STAGE_NAME}"
+            sh 'pwd'
+            sh 'ls -la'
+        }
+        unstable {
+            echo 'Pipeline execution completed with warnings!'
+        }
+        always {
+            echo 'Cleaning workspace...'
+            cleanWs()
+        }
+    }
+}
