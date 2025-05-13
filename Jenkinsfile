@@ -70,12 +70,6 @@ pipeline {
         }
         
         stage('SonarQube Analysis') {
-            agent {
-                docker {
-                    image 'node:18'
-                    reuseNode true
-                }
-            }
             steps {
                 dir('new-revive-checkout/checkout') {
                     script {
