@@ -2,7 +2,9 @@ pipeline {
     agent {
         label 'new-revive-agent'
     }
-    
+    environment {
+                SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+            }
     stages {
         stage('Checkout') {
             steps {
