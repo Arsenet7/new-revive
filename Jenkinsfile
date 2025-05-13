@@ -163,10 +163,15 @@ pipeline {
                 echo 'Pushing Docker image to DockerHub...'
                 
                 script {
-                    // Push to DockerHub using credentials
-                    docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-ars-id') {
-                        sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
-                        sh "docker push ${IMAGE_NAME}:latest"
+                    // Alternative method using credentials directly
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-ars-id', 
+                                                    usernameVariable: 'DOCKER_USER', 
+                                                    passwordVariable: 'DOCKER_PASS')]) {
+                        sh '''
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                            docker push ${IMAGE_NAME}:latest
+                        '''
                     }
                     
                     echo "Docker image pushed successfully to DockerHub"
