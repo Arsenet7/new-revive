@@ -2,10 +2,14 @@ pipeline {
     agent {
         label 'new-revive-agent'
     }
+    
     environment {
-                SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-            
-                SONAR_SCANNER_VERSION = '5.0.1.3006'
+        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+        SONAR_SCANNER_VERSION = '5.0.1.3006'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-ars-id')
+        DOCKER_IMAGE_CATALOG = 'yourdockerhubusername/new-revive-catalog'
+        DOCKER_IMAGE_DB = 'yourdockerhubusername/new-revive-catalog-db'
+        BUILD_VERSION = "${env.BUILD_NUMBER}"
     }
     
     stages {
@@ -66,18 +70,65 @@ pipeline {
                 }
             }
         }
+        
+        stage('Build Docker Images') {
+            parallel {
+                stage('Build Catalog Image') {
+                    steps {
+                        dir('new-revive-catalog/catalog') {
+                            sh """
+                                docker build -t ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} -f Dockerfile .
+                                docker tag ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} ${DOCKER_IMAGE_CATALOG}:latest
+                            """
+                        }
+                    }
+                }
+                
+                stage('Build DB Image') {
+                    steps {
+                        dir('new-revive-catalog/catalog') {
+                            sh """
+                                docker build -t ${DOCKER_IMAGE_DB}:${BUILD_VERSION} -f Dockerfile-db .
+                                docker tag ${DOCKER_IMAGE_DB}:${BUILD_VERSION} ${DOCKER_IMAGE_DB}:latest
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Push Docker Images') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-ars-id') {
+                        sh """
+                            docker push ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION}
+                            docker push ${DOCKER_IMAGE_CATALOG}:latest
+                            docker push ${DOCKER_IMAGE_DB}:${BUILD_VERSION}
+                            docker push ${DOCKER_IMAGE_DB}:latest
+                        """
+                    }
+                }
+            }
+        }
     }
     
     post {
         success {
-            echo 'Build, tests, and SonarQube analysis completed successfully!'
+            echo 'Build, tests, SonarQube analysis, and Docker images push completed successfully!'
         }
         failure {
-            echo 'Build, tests, or SonarQube analysis failed!'
+            echo 'Build, tests, SonarQube analysis, or Docker images push failed!'
         }
         always {
+            // Clean up Docker images to save space
+            sh """
+                docker rmi ${DOCKER_IMAGE_CATALOG}:${BUILD_VERSION} || true
+                docker rmi ${DOCKER_IMAGE_CATALOG}:latest || true
+                docker rmi ${DOCKER_IMAGE_DB}:${BUILD_VERSION} || true
+                docker rmi ${DOCKER_IMAGE_DB}:latest || true
+            """
             cleanWs()
         }
     }
 }
-        
