@@ -174,7 +174,7 @@ pipeline {
     
     post {
         success {
-            echo 'Build tests, and SonarQube analysis completed successfully!'
+            echo 'Build, tests, and SonarQube analysis completed successfully!'
         }
         failure {
             echo 'Build, tests, or SonarQube analysis failed!'
