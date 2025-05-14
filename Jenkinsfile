@@ -177,7 +177,7 @@ pipeline {
             echo 'Build, tests, and SonarQube analysis completed successfully!'
         }
         failure {
-            echo 'Build tests, or SonarQube analysis failed!'
+            echo 'Build, tests, or SonarQube analysis failed!'
         }
         always {
             cleanWs()
