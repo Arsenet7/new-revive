@@ -1,0 +1,790 @@
+# Kubernetes Deployment Strategy for DevOps Easy Learning
+
+## 1. Namespace Configuration
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: new-revive
+  labels:
+    app: devops-platform
+
+---
+## 2. UI Service Deployment (Frontend)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-deployment
+  namespace: new-revive
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ui
+  template:
+    metadata:
+      labels:
+        app: ui
+        tier: frontend
+    spec:
+      containers:
+      - name: ui
+        image: devops-easy-learning/ui:latest
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: API_GATEWAY_URL
+          value: "http://api-gateway-service:8080"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui-service
+  namespace: new-revive
+spec:
+  selector:
+    app: ui
+  ports:
+  - port: 80
+    targetPort: 80
+  type: LoadBalancer
+
+---
+## 3. Orders Service Deployment (App Service)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-deployment
+  namespace: new-revive
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+        tier: backend
+    spec:
+      containers:
+      - name: orders
+        image: devops-easy-learning/orders:latest
+        ports:
+        - containerPort: 8001
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: DB_HOST
+          value: "mysql-service"
+        - name: DB_PORT
+          value: "3306"
+        - name: RABBIT_MQ_HOST
+          value: "rabbitmq-service"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: new-revive
+spec:
+  selector:
+    app: orders
+  ports:
+  - port: 8001
+    targetPort: 8001
+
+---
+## 4. Checkout Service Deployment (App Service)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-deployment
+  namespace: new-revive
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+        tier: backend
+    spec:
+      containers:
+      - name: checkout
+        image: devops-easy-learning/checkout:latest
+        ports:
+        - containerPort: 8002
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: RABBIT_MQ_HOST
+          value: "rabbitmq-service"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-service
+  namespace: new-revive
+spec:
+  selector:
+    app: checkout
+  ports:
+  - port: 8002
+    targetPort: 8002
+
+---
+## 5. Carts Service Deployment (App Service)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carts-deployment
+  namespace: new-revive
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: carts
+  template:
+    metadata:
+      labels:
+        app: carts
+        tier: backend
+    spec:
+      containers:
+      - name: carts
+        image: devops-easy-learning/carts:latest
+        ports:
+        - containerPort: 8003
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: DYNAMODB_ENDPOINT
+          value: "http://dynamodb-service:8000"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts-service
+  namespace: new-revive
+spec:
+  selector:
+    app: carts
+  ports:
+  - port: 8003
+    targetPort: 8003
+
+---
+## 6. Catalog Service Deployment (App Service)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-deployment
+  namespace: new-revive
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+        tier: backend
+    spec:
+      containers:
+      - name: catalog
+        image: devops-easy-learning/catalog:latest
+        ports:
+        - containerPort: 8004
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: DB_HOST
+          value: "mysql-service"
+        - name: DB_PORT
+          value: "3306"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  namespace: new-revive
+spec:
+  selector:
+    app: catalog
+  ports:
+  - port: 8004
+    targetPort: 8004
+
+---
+## 7. Assets Service Deployment (App Service)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assets-deployment
+  namespace: new-revive
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: assets
+  template:
+    metadata:
+      labels:
+        app: assets
+        tier: backend
+    spec:
+      containers:
+      - name: assets
+        image: devops-easy-learning/assets:latest
+        ports:
+        - containerPort: 8005
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: asset-storage
+          mountPath: /assets
+      volumes:
+      - name: asset-storage
+        persistentVolumeClaim:
+          claimName: assets-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assets-service
+  namespace: new-revive
+spec:
+  selector:
+    app: assets
+  ports:
+  - port: 8005
+    targetPort: 8005
+
+---
+## 8. MySQL Deployment (Persistence Infrastructure)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-deployment
+  namespace: new-revive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+        tier: database
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: root-password
+        - name: MYSQL_DATABASE
+          value: "devops_db"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mysql-storage
+        persistentVolumeClaim:
+          claimName: mysql-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+  namespace: new-revive
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+
+---
+## 9. Redis Deployment (Persistence Infrastructure)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+  namespace: new-revive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        tier: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: new-revive
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+
+---
+## 10. DynamoDB Local Deployment (Persistence Infrastructure)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamodb-deployment
+  namespace: new-revive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dynamodb
+  template:
+    metadata:
+      labels:
+        app: dynamodb
+        tier: database
+    spec:
+      containers:
+      - name: dynamodb
+        image: amazon/dynamodb-local:latest
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: dynamodb-storage
+          mountPath: /home/dynamodblocal/data
+      volumes:
+      - name: dynamodb-storage
+        persistentVolumeClaim:
+          claimName: dynamodb-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamodb-service
+  namespace: new-revive
+spec:
+  selector:
+    app: dynamodb
+  ports:
+  - port: 8000
+    targetPort: 8000
+
+---
+## 11. RabbitMQ Deployment (Messaging Infrastructure)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq-deployment
+  namespace: new-revive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        tier: messaging
+    spec:
+      containers:
+      - name: rabbitmq
+        image: rabbitmq:3-management
+        ports:
+        - containerPort: 5672
+        - containerPort: 15672
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          value: "admin"
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: password
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: rabbitmq-storage
+          mountPath: /var/lib/rabbitmq
+      volumes:
+      - name: rabbitmq-storage
+        persistentVolumeClaim:
+          claimName: rabbitmq-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-service
+  namespace: new-revive
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+  - name: management
+    port: 15672
+    targetPort: 15672
+
+---
+## 12. Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: new-revive
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: new-revive
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamodb-pvc
+  namespace: new-revive
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-pvc
+  namespace: new-revive
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: assets-pvc
+  namespace: new-revive
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+
+---
+## 13. Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: new-revive
+type: Opaque
+data:
+  root-password: cGFzc3dvcmQxMjM=  # base64 encoded password
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-secret
+  namespace: new-revive
+type: Opaque
+data:
+  password: cGFzc3dvcmQxMjM=  # base64 encoded password
+
+---
+## 14. Ingress Configuration
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: devops-ingress
+  namespace: new-revive
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: devops-easy-learning.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ui-service
+            port:
+              number: 80
+      - path: /api/orders
+        pathType: Prefix
+        backend:
+          service:
+            name: orders-service
+            port:
+              number: 8001
+      - path: /api/checkout
+        pathType: Prefix
+        backend:
+          service:
+            name: checkout-service
+            port:
+              number: 8002
+      - path: /api/carts
+        pathType: Prefix
+        backend:
+          service:
+            name: carts-service
+            port:
+              number: 8003
+      - path: /api/catalog
+        pathType: Prefix
+        backend:
+          service:
+            name: catalog-service
+            port:
+              number: 8004
+      - path: /api/assets
+        pathType: Prefix
+        backend:
+          service:
+            name: assets-service
+            port:
+              number: 8005
+
+---
+## 15. Horizontal Pod Autoscaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ui-hpa
+  namespace: new-revive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ui-deployment
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orders-hpa
+  namespace: new-revive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orders-deployment
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+## 16. Network Policies
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-policy
+  namespace: new-revive
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          tier: frontend
+    - podSelector:
+        matchLabels:
+          tier: backend
+    ports:
+    - protocol: TCP
+      port: 8001
+    - protocol: TCP
+      port: 8002
+    - protocol: TCP
+      port: 8003
+    - protocol: TCP
+      port: 8004
+    - protocol: TCP
+      port: 8005
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          tier: database
+    - podSelector:
+        matchLabels:
+          tier: cache
+    - podSelector:
+        matchLabels:
+          tier: messaging
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-policy
+  namespace: new-revive
+spec:
+  podSelector:
+    matchLabels:
+      tier: database
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          tier: backend
+    ports:
+    - protocol: TCP
+      port: 3306
+    - protocol: TCP
+      port: 8000
