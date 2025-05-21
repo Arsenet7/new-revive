@@ -87,7 +87,7 @@ spec:
     spec:
       containers:
       - name: ui
-        image: arsenet10/new-revive-s6arsene:ui
+        image: arsenet10/new-revive:ui
         ports:
         - containerPort: 8080
         resources:
@@ -173,7 +173,7 @@ spec:
     spec:
       containers:
       - name: orders
-        image: arsenet10/new-revive-s6arsene:orders
+        image: arsenet10/new-revive:orders
         resources:
           requests:
             memory: "256Mi"
@@ -245,7 +245,7 @@ spec:
     spec:
       containers:
       - name: checkout
-        image: arsenet10/new-revive-s6arsene:checkout
+        image: arsenet10/new-revive:checkout
         resources:
           requests:
             memory: "256Mi"
@@ -313,7 +313,7 @@ spec:
     spec:
       containers:
       - name: carts
-        image: arsenet10/new-revive-s6arsene:cart
+        image: arsenet10/new-revive:cart
         resources:
           requests:
             memory: "256Mi"
@@ -357,7 +357,7 @@ spec:
     spec:
       containers:
       - name: catalog
-        image: arsenet10/new-revive-s6arsene:catalog
+        image: arsenet10/new-revive:catalog
         resources:
           requests:
             memory: "256Mi"
@@ -418,7 +418,7 @@ spec:
     spec:
       containers:
       - name: assets
-        image: arsenet10/new-revive-s6arsene:asset
+        image: arsenet10/new-revive:asset
         resources:
           requests:
             memory: "256Mi"
@@ -475,7 +475,7 @@ spec:
     spec:
       containers:
       - name: orders-db
-        image: arsenet10/new-revive-s6arsene:orders-db
+        image: arsenet10/new-revive:orders-db
         env:
         - name: POSTGRES_PASSWORD
           valueFrom:
@@ -549,7 +549,7 @@ spec:
     spec:
       containers:
       - name: checkout-cache
-        image: arsenet10/new-revive-s6arsene:checkout-db
+        image: arsenet10/new-revive:checkout-db
         ports:
         - containerPort: 6379
         resources:
@@ -607,7 +607,7 @@ spec:
     spec:
       containers:
       - name: carts-db
-        image: arsenet10/new-revive-s6arsene:cart-db
+        image: arsenet10/new-revive:cart-db
         ports:
         - containerPort: 8000
         command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
@@ -666,7 +666,7 @@ spec:
     spec:
       containers:
       - name: catalog-db
-        image: arsenet10/new-revive-s6arsene:catalog-db
+        image: arsenet10/new-revive:catalog-db
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
@@ -757,7 +757,7 @@ spec:
     spec:
       containers:
       - name: rabbitmq
-        image: arsenet10/new-revive-s6arsene:orders-rabbit-mq
+        image: arsenet10/new-revive:orders-rabbit-mq
         ports:
         - containerPort: 5672
         - containerPort: 15672
