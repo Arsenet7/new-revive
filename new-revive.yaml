@@ -43,7 +43,7 @@ data:
   
   # Database hosts
   orders-db-host: "orders-db-service"
-  catalog-db-host: "catalog-db-service"
+  catalog-db-host: "catalog-db-0.catalog-db-service"
   checkout-cache-host: "checkout-cache-service"
   carts-db-host: "carts-db-service"
   
