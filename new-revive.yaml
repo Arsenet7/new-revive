@@ -862,8 +862,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: ui-deployment
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
   - type: Resource
     resource:
@@ -890,8 +890,8 @@ spec:
     apiVersion: apps/v1
     kind: StatefulSet
     name: orders
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
   - type: Resource
     resource:
@@ -918,8 +918,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: checkout-deployment
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
   - type: Resource
     resource:
@@ -946,8 +946,8 @@ spec:
     apiVersion: apps/v1
     kind: StatefulSet
     name: carts
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
   - type: Resource
     resource:
@@ -974,8 +974,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: catalog-deployment
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
   - type: Resource
     resource:
@@ -1002,8 +1002,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: assets-deployment
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
   - type: Resource
     resource:
