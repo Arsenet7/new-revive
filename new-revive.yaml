@@ -640,7 +640,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: catalog-db-service
+  name: catalog-db
   namespace: s6arsene
 spec:
   selector:
@@ -656,7 +656,7 @@ metadata:
   name: catalog-db
   namespace: s6arsene
 spec:
-  serviceName: catalog-db-service
+  serviceName: catalog-db
   replicas: 1
   selector:
     matchLabels:
