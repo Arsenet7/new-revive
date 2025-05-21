@@ -1023,58 +1023,58 @@ spec:
 
 ---
 ## 17. Network Policies
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: backend-network-policy
-  namespace: s6arsene
-spec:
-  podSelector:
-    matchLabels:
-      tier: backend
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          tier: frontend
-    - podSelector:
-        matchLabels:
-          tier: backend
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          tier: database
-    - podSelector:
-        matchLabels:
-          tier: cache
-    - podSelector:
-        matchLabels:
-          tier: messaging
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: backend-network-policy
+#   namespace: s6arsene
+# spec:
+#   podSelector:
+#     matchLabels:
+#       tier: backend
+#   policyTypes:
+#   - Ingress
+#   - Egress
+#   ingress:
+#   - from:
+#     - podSelector:
+#         matchLabels:
+#           tier: frontend
+#     - podSelector:
+#         matchLabels:
+#           tier: backend
+#   egress:
+#   - to:
+#     - podSelector:
+#         matchLabels:
+#           tier: database
+#     - podSelector:
+#         matchLabels:
+#           tier: cache
+#     - podSelector:
+#         matchLabels:
+#           tier: messaging
 
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: frontend-network-policy
-  namespace: s6arsene
-spec:
-  podSelector:
-    matchLabels:
-      tier: frontend
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from: []  # Allow external traffic
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          tier: backend
-    - podSelector:
-        matchLabels:
-          tier: frontend
+# ---
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: frontend-network-policy
+#   namespace: s6arsene
+# spec:
+#   podSelector:
+#     matchLabels:
+#       tier: frontend
+#   policyTypes:
+#   - Ingress
+#   - Egress
+#   ingress:
+#   - from: []  # Allow external traffic
+#   egress:
+#   - to:
+#     - podSelector:
+#         matchLabels:
+#           tier: backend
+#     - podSelector:
+#         matchLabels:
+#           tier: frontend
