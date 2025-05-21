@@ -652,6 +652,7 @@ metadata:
   name: catalog-db
   namespace: s6arsene
 spec:
+  serviceName: catalog-db-service
   replicas: 1
   selector:
     matchLabels:
