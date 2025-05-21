@@ -383,7 +383,11 @@ spec:
             configMapKeyRef:
               name: app-config
               key: mysql-db
-        
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: mysql-port
 
 ---
 apiVersion: v1
