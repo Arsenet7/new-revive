@@ -1,4 +1,4 @@
-# Kubernetes Deployment Strategy for DevOps Easy Learning
+# Kubernetes Deployment Strategy for New Revive (With StatefulSets and VolumeClaimTemplates)
 
 ## 1. Namespace Configuration
 ---
@@ -7,17 +7,75 @@ kind: Namespace
 metadata:
   name: new-revive
   labels:
-    app: devops-platform
+    app: new-revive-platform
 
 ---
-## 2. UI Service Deployment (Frontend)
+## 2. Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database-secrets
+  namespace: new-revive
+type: Opaque
+data:
+  postgres-password: cGFzc3dvcmQ=  # base64 encoded "password"
+  mysql-root-password: cGFzc3dvcmQ=  # base64 encoded "password"
+
+---
+## 3. ConfigMap for Application Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: new-revive
+data:
+  # Database configuration
+  postgres-user: "postgres"
+  postgres-db: "orders"
+  mysql-db: "catalog"
+  
+  # Service endpoints for UI
+  endpoints-catalog: "http://catalog-service:8004"
+  endpoints-carts: "http://carts-service:8003"
+  endpoints-orders: "http://orders-service:8001"
+  endpoints-checkout: "http://checkout-service:8002"
+  endpoints-assets: "http://assets-service:8005"
+  
+  # Database hosts
+  orders-db-host: "orders-db-service"
+  catalog-db-host: "catalog-db-service"
+  checkout-cache-host: "checkout-cache-service"
+  carts-db-host: "carts-db-service"
+  
+  # Ports
+  postgres-port: "5432"
+  mysql-port: "3306"
+  redis-port: "6379"
+  dynamodb-port: "8000"
+  
+  # RabbitMQ configuration
+  rabbitmq-url: "amqp://rabbitmq-service"
+  rabbitmq-user: "admin"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-secret
+  namespace: new-revive
+type: Opaque
+data:
+  rabbitmq-password: YWRtaW4=  # base64 encoded "admin"
+
+---
+## 4. UI Service Deployment (Frontend)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ui-deployment
   namespace: new-revive
 spec:
-  replicas: 3
+  replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
     matchLabels:
       app: ui
@@ -29,9 +87,9 @@ spec:
     spec:
       containers:
       - name: ui
-        image: devops-easy-learning/ui:latest
+        image: arsenet10/new-revive:ui
         ports:
-        - containerPort: 80
+        - containerPort: 8080
         resources:
           requests:
             memory: "256Mi"
@@ -40,8 +98,31 @@ spec:
             memory: "512Mi"
             cpu: "500m"
         env:
-        - name: API_GATEWAY_URL
-          value: "http://api-gateway-service:8080"
+        - name: ENDPOINTS_CATALOG
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: endpoints-catalog
+        - name: ENDPOINTS_CARTS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: endpoints-carts
+        - name: ENDPOINTS_ORDERS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: endpoints-orders
+        - name: ENDPOINTS_CHECKOUT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: endpoints-checkout
+        - name: ENDPOINTS_ASSETS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: endpoints-assets
 
 ---
 apiVersion: v1
@@ -53,49 +134,12 @@ spec:
   selector:
     app: ui
   ports:
-  - port: 80
-    targetPort: 80
+  - port: 8080
+    targetPort: 8080
   type: LoadBalancer
 
 ---
-## 3. Orders Service Deployment (App Service)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: orders-deployment
-  namespace: new-revive
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: orders
-  template:
-    metadata:
-      labels:
-        app: orders
-        tier: backend
-    spec:
-      containers:
-      - name: orders
-        image: devops-easy-learning/orders:latest
-        ports:
-        - containerPort: 8001
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        env:
-        - name: DB_HOST
-          value: "mysql-service"
-        - name: DB_PORT
-          value: "3306"
-        - name: RABBIT_MQ_HOST
-          value: "rabbitmq-service"
-
----
+## 5. Orders Service StatefulSet (using volumeClaimTemplate)
 apiVersion: v1
 kind: Service
 metadata:
@@ -107,16 +151,89 @@ spec:
   ports:
   - port: 8001
     targetPort: 8001
+  clusterIP: None
 
 ---
-## 4. Checkout Service Deployment (App Service)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders
+  namespace: new-revive
+spec:
+  serviceName: orders-service
+  replicas: 1  # Initial replica count, HPA will manage scaling
+  selector:
+    matchLabels:
+      app: orders
+  template:
+    metadata:
+      labels:
+        app: orders
+        tier: backend
+    spec:
+      containers:
+      - name: orders
+        image: arsenet10/new-revive:orders
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: orders-db-host
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: postgres-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: postgres-password
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: postgres-db
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: postgres-port
+        - name: RABBITMQ_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbitmq-url
+        volumeMounts:
+        - name: orders-volume
+          mountPath: /app
+  volumeClaimTemplates:
+  - metadata:
+      name: orders-volume
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+## 6. Checkout Service Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: checkout-deployment
   namespace: new-revive
 spec:
-  replicas: 2
+  replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
     matchLabels:
       app: checkout
@@ -128,9 +245,7 @@ spec:
     spec:
       containers:
       - name: checkout
-        image: devops-easy-learning/checkout:latest
-        ports:
-        - containerPort: 8002
+        image: arsenet10/new-revive:checkout
         resources:
           requests:
             memory: "256Mi"
@@ -140,9 +255,15 @@ spec:
             cpu: "500m"
         env:
         - name: REDIS_HOST
-          value: "redis-service"
-        - name: RABBIT_MQ_HOST
-          value: "rabbitmq-service"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: checkout-cache-host
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: redis-port
 
 ---
 apiVersion: v1
@@ -158,40 +279,7 @@ spec:
     targetPort: 8002
 
 ---
-## 5. Carts Service Deployment (App Service)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: carts-deployment
-  namespace: new-revive
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: carts
-  template:
-    metadata:
-      labels:
-        app: carts
-        tier: backend
-    spec:
-      containers:
-      - name: carts
-        image: devops-easy-learning/carts:latest
-        ports:
-        - containerPort: 8003
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        env:
-        - name: DYNAMODB_ENDPOINT
-          value: "http://dynamodb-service:8000"
-
----
+## 7. Carts Service StatefulSet (using volumeClaimTemplate)
 apiVersion: v1
 kind: Service
 metadata:
@@ -203,16 +291,61 @@ spec:
   ports:
   - port: 8003
     targetPort: 8003
+  clusterIP: None
 
 ---
-## 6. Catalog Service Deployment (App Service)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: carts
+  namespace: new-revive
+spec:
+  serviceName: carts-service
+  replicas: 1  # Initial replica count, HPA will manage scaling
+  selector:
+    matchLabels:
+      app: carts
+  template:
+    metadata:
+      labels:
+        app: carts
+        tier: backend
+    spec:
+      containers:
+      - name: carts
+        image: arsenet10/new-revive:cart
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: DYNAMODB_ENDPOINT
+          value: "http://carts-db-service:8000"
+        volumeMounts:
+        - name: cart-volume
+          mountPath: /app
+  volumeClaimTemplates:
+  - metadata:
+      name: cart-volume
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+## 8. Catalog Service Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: catalog-deployment
   namespace: new-revive
 spec:
-  replicas: 3
+  replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
     matchLabels:
       app: catalog
@@ -224,9 +357,7 @@ spec:
     spec:
       containers:
       - name: catalog
-        image: devops-easy-learning/catalog:latest
-        ports:
-        - containerPort: 8004
+        image: arsenet10/new-revive:catalog
         resources:
           requests:
             memory: "256Mi"
@@ -236,9 +367,23 @@ spec:
             cpu: "500m"
         env:
         - name: DB_HOST
-          value: "mysql-service"
-        - name: DB_PORT
-          value: "3306"
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: catalog-db-host
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: mysql-root-password
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: mysql-db
+        restartPolicy: Always
 
 ---
 apiVersion: v1
@@ -254,14 +399,14 @@ spec:
     targetPort: 8004
 
 ---
-## 7. Assets Service Deployment (App Service)
+## 9. Assets Service Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: assets-deployment
   namespace: new-revive
 spec:
-  replicas: 2
+  replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
     matchLabels:
       app: assets
@@ -269,13 +414,11 @@ spec:
     metadata:
       labels:
         app: assets
-        tier: backend
+        tier: frontend
     spec:
       containers:
       - name: assets
-        image: devops-easy-learning/assets:latest
-        ports:
-        - containerPort: 8005
+        image: arsenet10/new-revive:asset
         resources:
           requests:
             memory: "256Mi"
@@ -283,13 +426,6 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-        volumeMounts:
-        - name: asset-storage
-          mountPath: /assets
-      volumes:
-      - name: asset-storage
-        persistentVolumeClaim:
-          claimName: assets-pvc
 
 ---
 apiVersion: v1
@@ -305,36 +441,59 @@ spec:
     targetPort: 8005
 
 ---
-## 8. MySQL Deployment (Persistence Infrastructure)
-apiVersion: apps/v1
-kind: Deployment
+## 10. Orders Database (PostgreSQL) StatefulSet
+apiVersion: v1
+kind: Service
 metadata:
-  name: mysql-deployment
+  name: orders-db-service
   namespace: new-revive
 spec:
+  selector:
+    app: orders-db
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None  # Headless service for StatefulSet
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-db
+  namespace: new-revive
+spec:
+  serviceName: orders-db-service
   replicas: 1
   selector:
     matchLabels:
-      app: mysql
+      app: orders-db
   template:
     metadata:
       labels:
-        app: mysql
+        app: orders-db
         tier: database
     spec:
       containers:
-      - name: mysql
-        image: mysql:8.0
-        ports:
-        - containerPort: 3306
+      - name: orders-db
+        image: arsenet10/new-revive:orders-db
         env:
-        - name: MYSQL_ROOT_PASSWORD
+        - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: mysql-secret
-              key: root-password
-        - name: MYSQL_DATABASE
-          value: "devops_db"
+              name: database-secrets
+              key: postgres-password
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: postgres-user
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: postgres-db
+        ports:
+        - containerPort: 5432
         resources:
           requests:
             memory: "512Mi"
@@ -343,47 +502,54 @@ spec:
             memory: "1Gi"
             cpu: "1000m"
         volumeMounts:
-        - name: mysql-storage
-          mountPath: /var/lib/mysql
-      volumes:
-      - name: mysql-storage
-        persistentVolumeClaim:
-          claimName: mysql-pvc
+        - name: orders-db-data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: orders-db-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 10Gi
 
 ---
+## 11. Checkout Cache (Redis) StatefulSet
 apiVersion: v1
 kind: Service
 metadata:
-  name: mysql-service
+  name: checkout-cache-service
   namespace: new-revive
 spec:
   selector:
-    app: mysql
+    app: checkout-cache
   ports:
-  - port: 3306
-    targetPort: 3306
+  - port: 6379
+    targetPort: 6379
+  clusterIP: None  # Headless service for StatefulSet
 
 ---
-## 9. Redis Deployment (Persistence Infrastructure)
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: redis-deployment
+  name: checkout-cache
   namespace: new-revive
 spec:
+  serviceName: checkout-cache-service
   replicas: 1
   selector:
     matchLabels:
-      app: redis
+      app: checkout-cache
   template:
     metadata:
       labels:
-        app: redis
+        app: checkout-cache
         tier: cache
     spec:
       containers:
-      - name: redis
-        image: redis:7-alpine
+      - name: checkout-cache
+        image: arsenet10/new-revive:checkout-db
         ports:
         - containerPort: 6379
         resources:
@@ -394,109 +560,57 @@ spec:
             memory: "256Mi"
             cpu: "200m"
         volumeMounts:
-        - name: redis-storage
+        - name: checkout-cache-data
           mountPath: /data
-      volumes:
-      - name: redis-storage
-        persistentVolumeClaim:
-          claimName: redis-pvc
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis-service
-  namespace: new-revive
-spec:
-  selector:
-    app: redis
-  ports:
-  - port: 6379
-    targetPort: 6379
-
----
-## 10. DynamoDB Local Deployment (Persistence Infrastructure)
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: dynamodb-deployment
-  namespace: new-revive
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: dynamodb
-  template:
-    metadata:
-      labels:
-        app: dynamodb
-        tier: database
+  volumeClaimTemplates:
+  - metadata:
+      name: checkout-cache-data
     spec:
-      containers:
-      - name: dynamodb
-        image: amazon/dynamodb-local:latest
-        ports:
-        - containerPort: 8000
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        volumeMounts:
-        - name: dynamodb-storage
-          mountPath: /home/dynamodblocal/data
-      volumes:
-      - name: dynamodb-storage
-        persistentVolumeClaim:
-          claimName: dynamodb-pvc
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 2Gi
 
 ---
+## 12. Carts Database (DynamoDB Local) StatefulSet
 apiVersion: v1
 kind: Service
 metadata:
-  name: dynamodb-service
+  name: carts-db-service
   namespace: new-revive
 spec:
   selector:
-    app: dynamodb
+    app: carts-db
   ports:
   - port: 8000
     targetPort: 8000
+  clusterIP: None  # Headless service for StatefulSet
 
 ---
-## 11. RabbitMQ Deployment (Messaging Infrastructure)
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: rabbitmq-deployment
+  name: carts-db
   namespace: new-revive
 spec:
+  serviceName: carts-db-service
   replicas: 1
   selector:
     matchLabels:
-      app: rabbitmq
+      app: carts-db
   template:
     metadata:
       labels:
-        app: rabbitmq
-        tier: messaging
+        app: carts-db
+        tier: database
     spec:
       containers:
-      - name: rabbitmq
-        image: rabbitmq:3-management
+      - name: carts-db
+        image: arsenet10/new-revive:cart-db
         ports:
-        - containerPort: 5672
-        - containerPort: 15672
-        env:
-        - name: RABBITMQ_DEFAULT_USER
-          value: "admin"
-        - name: RABBITMQ_DEFAULT_PASS
-          valueFrom:
-            secretKeyRef:
-              name: rabbitmq-secret
-              key: password
+        - containerPort: 8000
+        command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
         resources:
           requests:
             memory: "256Mi"
@@ -505,14 +619,89 @@ spec:
             memory: "512Mi"
             cpu: "500m"
         volumeMounts:
-        - name: rabbitmq-storage
-          mountPath: /var/lib/rabbitmq
-      volumes:
-      - name: rabbitmq-storage
-        persistentVolumeClaim:
-          claimName: rabbitmq-pvc
+        - name: carts-db-data
+          mountPath: /home/dynamodblocal/data
+  volumeClaimTemplates:
+  - metadata:
+      name: carts-db-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 5Gi
 
 ---
+## 13. Catalog Database (MySQL) StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-db-service
+  namespace: new-revive
+spec:
+  selector:
+    app: catalog-db
+  ports:
+  - port: 3306
+    targetPort: 3306
+  clusterIP: None  # Headless service for StatefulSet
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: catalog-db
+  namespace: new-revive
+spec:
+  serviceName: catalog-db-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-db
+  template:
+    metadata:
+      labels:
+        app: catalog-db
+        tier: database
+    spec:
+      containers:
+      - name: catalog-db
+        image: arsenet10/new-revive:catalog-db
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secrets
+              key: mysql-root-password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: mysql-db
+        ports:
+        - containerPort: 3306
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: catalog-db-data
+          mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+  - metadata:
+      name: catalog-db-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+## 14. RabbitMQ StatefulSet
 apiVersion: v1
 kind: Service
 metadata:
@@ -528,158 +717,141 @@ spec:
   - name: management
     port: 15672
     targetPort: 15672
+  clusterIP: None  # Headless service for StatefulSet
 
 ---
-## 12. Persistent Volume Claims
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: mysql-pvc
+  name: rabbitmq-lb
   namespace: new-revive
 spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: standard
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+  - name: management
+    port: 15672
+    targetPort: 15672
+  type: LoadBalancer
 
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
-  name: redis-pvc
+  name: rabbitmq
   namespace: new-revive
 spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
-  storageClassName: standard
+  serviceName: rabbitmq-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        tier: messaging
+    spec:
+      containers:
+      - name: rabbitmq
+        image: arsenet10/new-revive:orders-rabbit-mq
+        ports:
+        - containerPort: 5672
+        - containerPort: 15672
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: rabbitmq-user
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: rabbitmq-password
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: rabbitmq-data
+          mountPath: /var/lib/rabbitmq
+  volumeClaimTemplates:
+  - metadata:
+      name: rabbitmq-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: "standard"
+      resources:
+        requests:
+          storage: 5Gi
 
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: dynamodb-pvc
-  namespace: new-revive
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: standard
+# ## 15. Ingress Configuration
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: new-revive-ingress
+#   namespace: new-revive
+#   annotations:
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+# spec:
+#   rules:
+#   - host: new-revive.com
+#     http:
+#       paths:
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: ui-service
+#             port:
+#               number: 8080
+#       - path: /api/orders
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: orders-service
+#             port:
+#               number: 8001
+#       - path: /api/checkout
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: checkout-service
+#             port:
+#               number: 8002
+#       - path: /api/carts
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: carts-service
+#             port:
+#               number: 8003
+#       - path: /api/catalog
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: catalog-service
+#             port:
+#               number: 8004
+#       - path: /api/assets
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: assets-service
+#             port:
+#               number: 8005
 
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: rabbitmq-pvc
-  namespace: new-revive
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: standard
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: assets-pvc
-  namespace: new-revive
-spec:
-  accessModes:
-  - ReadWriteMany
-  resources:
-    requests:
-      storage: 20Gi
-  storageClassName: standard
-
----
-## 13. Secrets
-apiVersion: v1
-kind: Secret
-metadata:
-  name: mysql-secret
-  namespace: new-revive
-type: Opaque
-data:
-  root-password: cGFzc3dvcmQxMjM=  # base64 encoded password
-
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: rabbitmq-secret
-  namespace: new-revive
-type: Opaque
-data:
-  password: cGFzc3dvcmQxMjM=  # base64 encoded password
-
----
-## 14. Ingress Configuration
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: devops-ingress
-  namespace: new-revive
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-spec:
-  rules:
-  - host: devops-easy-learning.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: ui-service
-            port:
-              number: 80
-      - path: /api/orders
-        pathType: Prefix
-        backend:
-          service:
-            name: orders-service
-            port:
-              number: 8001
-      - path: /api/checkout
-        pathType: Prefix
-        backend:
-          service:
-            name: checkout-service
-            port:
-              number: 8002
-      - path: /api/carts
-        pathType: Prefix
-        backend:
-          service:
-            name: carts-service
-            port:
-              number: 8003
-      - path: /api/catalog
-        pathType: Prefix
-        backend:
-          service:
-            name: catalog-service
-            port:
-              number: 8004
-      - path: /api/assets
-        pathType: Prefix
-        backend:
-          service:
-            name: assets-service
-            port:
-              number: 8005
-
----
-## 15. Horizontal Pod Autoscaling
+## 16. Horizontal Pod Autoscaling Configuration
+# UI Service HPA
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -690,7 +862,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: ui-deployment
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 10
   metrics:
   - type: Resource
@@ -699,8 +871,15 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
 
 ---
+# Orders Service HPA (for StatefulSet)
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -709,9 +888,9 @@ metadata:
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
-    kind: Deployment
-    name: orders-deployment
-  minReplicas: 3
+    kind: StatefulSet
+    name: orders
+  minReplicas: 2
   maxReplicas: 10
   metrics:
   - type: Resource
@@ -720,13 +899,131 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
 
 ---
-## 16. Network Policies
+# Checkout Service HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: checkout-hpa
+  namespace: new-revive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: checkout-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# Carts Service HPA (for StatefulSet)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: carts-hpa
+  namespace: new-revive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: carts
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# Catalog Service HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: catalog-hpa
+  namespace: new-revive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: catalog-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# Assets Service HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: assets-hpa
+  namespace: new-revive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: assets-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+## 17. Network Policies
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: backend-policy
+  name: backend-network-policy
   namespace: new-revive
 spec:
   podSelector:
@@ -743,17 +1040,6 @@ spec:
     - podSelector:
         matchLabels:
           tier: backend
-    ports:
-    - protocol: TCP
-      port: 8001
-    - protocol: TCP
-      port: 8002
-    - protocol: TCP
-      port: 8003
-    - protocol: TCP
-      port: 8004
-    - protocol: TCP
-      port: 8005
   egress:
   - to:
     - podSelector:
@@ -770,21 +1056,22 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: database-policy
+  name: frontend-network-policy
   namespace: new-revive
 spec:
   podSelector:
     matchLabels:
-      tier: database
+      tier: frontend
   policyTypes:
   - Ingress
+  - Egress
   ingress:
-  - from:
+  - from: []  # Allow external traffic
+  egress:
+  - to:
     - podSelector:
         matchLabels:
           tier: backend
-    ports:
-    - protocol: TCP
-      port: 3306
-    - protocol: TCP
-      port: 8000
+    - podSelector:
+        matchLabels:
+          tier: frontend
