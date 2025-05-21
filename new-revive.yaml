@@ -220,7 +220,7 @@ spec:
       name: orders-volume
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 5Gi
@@ -332,7 +332,7 @@ spec:
       name: cart-volume
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 5Gi
@@ -509,7 +509,7 @@ spec:
       name: orders-db-data
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 10Gi
@@ -567,7 +567,7 @@ spec:
       name: checkout-cache-data
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 2Gi
@@ -626,7 +626,7 @@ spec:
       name: carts-db-data
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 5Gi
@@ -695,7 +695,7 @@ spec:
       name: catalog-db-data
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 10Gi
@@ -787,7 +787,7 @@ spec:
       name: rabbitmq-data
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-xfs"
+      storageClassName: "do-block-storage-retain"
       resources:
         requests:
           storage: 5Gi
