@@ -5,9 +5,9 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: new-revive-s6arsene
+  name: s6arsene
   labels:
-    app: new-revive-s6arsene-platform
+    app: s6arsene-platform
 
 ---
 ## 2. Secrets
@@ -15,7 +15,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: database-secrets
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 type: Opaque
 data:
   postgres-password: cGFzc3dvcmQ=  # base64 encoded "password"
@@ -27,7 +27,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: app-config
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 data:
   # Database configuration
   postgres-user: "postgres"
@@ -62,7 +62,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: rabbitmq-secret
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 type: Opaque
 data:
   rabbitmq-password: YWRtaW4=  # base64 encoded "admin"
@@ -73,7 +73,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ui-deployment
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
@@ -129,7 +129,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ui-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: ui
@@ -144,7 +144,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: orders-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: orders
@@ -158,7 +158,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: orders
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: orders-service
   replicas: 1  # Initial replica count, HPA will manage scaling
@@ -231,7 +231,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: checkout-deployment
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
@@ -270,7 +270,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: checkout-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: checkout
@@ -284,7 +284,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: carts-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: carts
@@ -298,7 +298,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: carts
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: carts-service
   replicas: 1  # Initial replica count, HPA will manage scaling
@@ -343,7 +343,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: catalog-deployment
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
@@ -390,7 +390,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: catalog-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: catalog
@@ -404,7 +404,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: assets-deployment
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
@@ -432,7 +432,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: assets-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: assets
@@ -446,7 +446,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: orders-db-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: orders-db
@@ -460,7 +460,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: orders-db
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: orders-db-service
   replicas: 1
@@ -520,7 +520,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: checkout-cache-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: checkout-cache
@@ -534,7 +534,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: checkout-cache
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: checkout-cache-service
   replicas: 1
@@ -578,7 +578,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: carts-db-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: carts-db
@@ -592,7 +592,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: carts-db
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: carts-db-service
   replicas: 1
@@ -637,7 +637,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: catalog-db-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: catalog-db
@@ -651,7 +651,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: catalog-db
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: catalog-db-service
   replicas: 1
@@ -706,7 +706,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq-service
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: rabbitmq
@@ -724,7 +724,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: rabbitmq-lb
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   selector:
     app: rabbitmq
@@ -742,7 +742,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: rabbitmq
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   serviceName: rabbitmq-service
   replicas: 1
@@ -797,13 +797,13 @@ spec:
 # apiVersion: networking.k8s.io/v1
 # kind: Ingress
 # metadata:
-#   name: new-revive-s6arsene-ingress
-#   namespace: new-revive-s6arsene
+#   name: s6arsene-ingress
+#   namespace: s6arsene
 #   annotations:
 #     nginx.ingress.kubernetes.io/rewrite-target: /
 # spec:
 #   rules:
-#   - host: new-revive-s6arsene.com
+#   - host: s6arsene.com
 #     http:
 #       paths:
 #       - path: /
@@ -856,7 +856,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: ui-hpa
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -884,7 +884,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: orders-hpa
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -912,7 +912,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: checkout-hpa
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -940,7 +940,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: carts-hpa
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -968,7 +968,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: catalog-hpa
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -996,7 +996,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: assets-hpa
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -1024,7 +1024,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: backend-network-policy
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   podSelector:
     matchLabels:
@@ -1057,7 +1057,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: frontend-network-policy
-  namespace: new-revive-s6arsene
+  namespace: s6arsene
 spec:
   podSelector:
     matchLabels:
