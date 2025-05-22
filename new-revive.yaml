@@ -286,7 +286,6 @@ metadata:
   name: carts
   namespace: s6arsene
 spec:
-  serviceName: carts-service
   replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
     matchLabels:
