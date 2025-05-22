@@ -151,16 +151,14 @@ spec:
   ports:
   - port: 8001
     targetPort: 8001
-  clusterIP: None
 
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: orders
   namespace: s6arsene
 spec:
-  serviceName: orders-service
   replicas: 1  # Initial replica count, HPA will manage scaling
   selector:
     matchLabels:
@@ -212,18 +210,7 @@ spec:
             configMapKeyRef:
               name: app-config
               key: rabbitmq-url
-        volumeMounts:
-        - name: orders-volume
-          mountPath: /app
-  volumeClaimTemplates:
-  - metadata:
-      name: orders-volume
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-retain"
-      resources:
-        requests:
-          storage: 5Gi
+        
 
 ---
 ## 6. Checkout Service Deployment
@@ -291,11 +278,10 @@ spec:
   ports:
   - port: 8003
     targetPort: 8003
-  clusterIP: None
 
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: carts
   namespace: s6arsene
@@ -324,18 +310,7 @@ spec:
         env:
         - name: DYNAMODB_ENDPOINT
           value: "http://carts-db-service:8000"
-        volumeMounts:
-        - name: cart-volume
-          mountPath: /app
-  volumeClaimTemplates:
-  - metadata:
-      name: cart-volume
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: "do-block-storage-retain"
-      resources:
-        requests:
-          storage: 5Gi
+        
 
 ---
 ## 8. Catalog Service Deployment
@@ -507,7 +482,7 @@ spec:
             cpu: "1000m"
         volumeMounts:
         - name: orders-db-data
-          mountPath: /var/lib/postgresql/data
+          mountPath: /var/lib/postgresql/data-0
   volumeClaimTemplates:
   - metadata:
       name: orders-db-data
@@ -614,7 +589,6 @@ spec:
         image: arsenet10/new-revive:cart-db
         ports:
         - containerPort: 8000
-        command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
         resources:
           requests:
             memory: "256Mi"
