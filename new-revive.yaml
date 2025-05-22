@@ -149,8 +149,8 @@ spec:
   selector:
     app: orders
   ports:
-  - port: 8001
-    targetPort: 8001
+  - port: 8080
+    targetPort: 8080
 
 ---
 apiVersion: apps/v1
@@ -262,8 +262,8 @@ spec:
   selector:
     app: checkout
   ports:
-  - port: 8002
-    targetPort: 8002
+  - port: 8080
+    targetPort: 8080
 
 ---
 ## 7. Carts Service StatefulSet (using volumeClaimTemplate)
@@ -276,8 +276,8 @@ spec:
   selector:
     app: carts
   ports:
-  - port: 8003
-    targetPort: 8003
+  - port: 8080
+    targetPort: 8080
 
 ---
 apiVersion: apps/v1
@@ -373,8 +373,8 @@ spec:
   selector:
     app: catalog
   ports:
-  - port: 8004
-    targetPort: 8004
+  - port: 8080
+    targetPort: 8080
 
 ---
 ## 9. Assets Service Deployment
@@ -415,8 +415,8 @@ spec:
   selector:
     app: assets
   ports:
-  - port: 8005
-    targetPort: 8005
+  - port: 8080
+    targetPort: 8080
 
 ---
 ## 10. Orders Database (PostgreSQL) StatefulSet
