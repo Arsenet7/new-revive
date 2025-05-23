@@ -35,11 +35,11 @@ data:
   mysql-db: "catalog"
   
   # Service endpoints for UI
-  endpoints-catalog: "http://catalog-service:8004"
-  endpoints-carts: "http://carts-service:8003"
-  endpoints-orders: "http://orders-service:8001"
-  endpoints-checkout: "http://checkout-service:8002"
-  endpoints-assets: "http://assets-service:8005"
+  endpoints-catalog: "http://catalog-service:8080"
+  endpoints-carts: "http://carts-service:8080"
+  endpoints-orders: "http://orders-service:8080"
+  endpoints-checkout: "http://checkout-service:8080"
+  endpoints-assets: "http://assets-service:8080"
   
   # Database hosts
   orders-db-host: "orders-db-service"
