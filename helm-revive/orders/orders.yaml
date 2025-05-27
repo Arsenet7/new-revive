@@ -1,0 +1,205 @@
+NAME: orders
+LAST DEPLOYED: Wed Nov 20 12:06:15 2024
+NAMESPACE: default
+STATUS: pending-install
+REVISION: 1
+HOOKS:
+---
+# Source: orders/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "orders-test-connection"
+  labels:
+    app.kubernetes.io/name: orders
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['orders:8080']
+  restartPolicy: Never
+MANIFEST:
+---
+# Source: orders/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-service-account
+---
+# Source: orders/templates/serviceaccountdb.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-db-service-account
+---
+# Source: orders/templates/secretdb.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orders-db-secret
+type: Opaque
+data:
+  POSTGRES_PASSWORD: b3JkZXJzX3Bhc3M=
+  POSTGRES_USER: b3JkZXJzX3VzZXI=
+---
+# Source: orders/templates/secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orders-secret
+type: Opaque
+data:
+  DB_PASSWORD: b3JkZXJzX3Bhc3M=
+  DB_USER: b3JkZXJzX3VzZXI=
+---
+# Source: orders/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-config
+data:
+  DB_HOST: orders-db
+  DB_NAME: orders
+---
+# Source: orders/templates/configmapdb.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-db-config
+data:
+  POSTGRES_DB: orders
+---
+# Source: orders/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-db
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: orders-db
+---
+# Source: orders/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-deployment
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orders
+    spec:
+      serviceAccountName: orders-service-account
+      containers:
+        - name: orders
+          image: "arsenet10/revive-orders:01"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: orders-config      # Refer to ConfigMap
+            - secretRef:
+                name: orders-secret         # Refer to Secret          
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 200m
+              memory: 128Mi
+---
+# Source: orders/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orders-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orders-deployment
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    #
+---
+# Source: orders/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-db
+spec:
+  serviceName: "orders-db-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orders-db
+    spec:
+      serviceAccountName: orders-db-service-account
+      containers:
+        - name: orders-db
+          image: "arsenet10/revive-orders:db-01"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: orders-db-config      # Refer to ConfigMap
+            - secretRef:
+                name: orders-db-secret         # Refer to Secret          
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          volumeMounts:
+            - name: orders-db-storage
+              mountPath: /var/lib/postgresql/data01  # Mount path in the container for persistence
+  volumeClaimTemplates:
+    - metadata:
+        name: orders-db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=orders,app.kubernetes.io/instance=orders" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace default $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace default port-forward $POD_NAME 8080:$CONTAINER_PORT

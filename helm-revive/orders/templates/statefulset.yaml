@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "orders.fullname" . }}-db
+spec:
+  serviceName: "orders-db-service"
+  {{- if not .Values.autoscaling.enabledb }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ordersdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ordersdb.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "ordersdb.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}-db
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tagdb | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.portdb }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.configmap.namedb }}      # Refer to ConfigMap
+            - secretRef:
+                name: {{ .Values.secret.namedb }}         # Refer to Secret          
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          volumeMounts:
+            - name: orders-db-storage
+              mountPath: /var/lib/postgresql/data01  # Mount path in the container for persistence
+  volumeClaimTemplates:
+    - metadata:
+        name: orders-db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+          

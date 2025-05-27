@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rabbitmq.name" . }}
+  labels:
+    {{- include "rabbitmq.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "rabbitmq.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rabbitmq.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "carts.serviceAccountNamemq" . }}
+      containers:
+        - name: {{ .Values.namemq }}
+          image: "{{ .Values.image.repositorymq }}:{{ .Values.image.tagmq | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.portmq1 }}
+            - containerPort: {{ .Values.service.portmq2 }}
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.configmap.namemq }}
+                  key: RABBITMQ_DEFAULT_USER
+            - name: RABBITMQ_DEFAULT_VHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.configmap.namemq }}
+                  key: RABBITMQ_DEFAULT_VHOST
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.namemq }}
+                  key: RABBITMQ_DEFAULT_PASS
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          resources:
+            {{- toYaml .Values.resourcesmq | nindent 12 }}
+          

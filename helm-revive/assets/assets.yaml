@@ -1,0 +1,109 @@
+NAME: assets
+LAST DEPLOYED: Tue Nov 19 12:15:48 2024
+NAMESPACE: default
+STATUS: pending-install
+REVISION: 1
+HOOKS:
+---
+# Source: assets/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "assets-test-connection"
+  labels:
+    app.kubernetes.io/name: assets
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['assets:8080']
+  restartPolicy: Never
+MANIFEST:
+---
+# Source: assets/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: assets-service-account
+---
+# Source: assets/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: assets
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: assets
+---
+# Source: assets/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assets-deployment
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: assets
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: assets
+    spec:
+      serviceAccountName: assets-service-account
+      containers:
+        - name: assets
+          image: "arsenet10/revive-assets:01"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          resources:
+            limits:
+              cpu: 200m
+              memory: 64Mi
+            requests:
+              cpu: 100m
+              memory: 32Mi
+---
+# Source: assets/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: assets-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: assets-deployment
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    #
+
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=assets,app.kubernetes.io/instance=assets" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace default $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace default port-forward $POD_NAME 8080:$CONTAINER_PORT

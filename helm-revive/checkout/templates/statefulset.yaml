@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "checkout.fullname" . }}-db
+spec:
+  serviceName: "checkout-db-service"
+  {{- if not .Values.autoscaling.enabledb }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "checkoutdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "checkoutdb.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "checkoutdb.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}-db
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tagdb | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.portdb }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.configmap.name }}     # Refer to ConfigMap
+            - secretRef:
+                name: {{ .Values.secret.namedb }}
+          # livenessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: http
+          # readinessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: http
+          volumeMounts:
+            - name: checkout-db-storage
+              mountPath: /data                   # Default Redis data directory
+  volumeClaimTemplates:
+    - metadata:
+        name: checkout-db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi                         # Adjust size based on Redis data needs
+
+          

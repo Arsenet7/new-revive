@@ -1,0 +1,245 @@
+NAME: catalog
+LAST DEPLOYED: Wed Nov 20 01:05:29 2024
+NAMESPACE: default
+STATUS: pending-install
+REVISION: 1
+HOOKS:
+---
+# Source: catalog/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "catalog-test-connection"
+  labels:
+    app.kubernetes.io/name: catalog
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['catalog:8080']
+  restartPolicy: Never
+MANIFEST:
+---
+# Source: catalog/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: catalog-service-account
+---
+# Source: catalog/templates/serviceaccountdb.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: catalog-db-service-account
+---
+# Source: catalog/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: catalog-secret
+type: Opaque
+data:
+  DB_PASSWORD: Y2F0YWxvZ19wYXNz
+  DB_USER: Y2F0YWxvZ191c2Vy
+---
+# Source: catalog/templates/secretdb.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: catalog-db-secret
+type: Opaque
+data:
+  MYSQL_PASSWORD: Y2F0YWxvZ19wYXNz
+  MYSQL_ROOT_PASSWORD: cm9vdA==
+  MYSQL_USER: Y2F0YWxvZ191c2Vy
+---
+# Source: catalog/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-config
+data:
+  DB_HOST: catalog-db
+  DB_NAME: sampledb
+  GIN_MODE: release
+---
+# Source: catalog/templates/configmapdb.yaml
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-db-config
+data:
+  MYSQL_DATABASE: sampledb
+---
+# Source: catalog/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: catalog
+---
+# Source: catalog/templates/servicedb.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-db
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3306
+      targetPort: 3306
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: catalog-db
+---
+# Source: catalog/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-deployment
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog
+    spec:
+      serviceAccountName: catalog-service-account
+      containers:
+        - name: catalog
+          image: "arsenet10/revive-catalog:01"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GIN_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: catalog-config
+                  key: GIN_MODE
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: catalog-config
+                  key: DB_HOST
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: catalog-config
+                  key: DB_NAME
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-secret
+                  key: DB_PASSWORD
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-secret
+                  key: DB_USER
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          resources:
+            limits:
+              cpu: 250m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+---
+# Source: catalog/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: catalog-hpa
+  labels:
+    app.kubernetes.io/name: catalog
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: catalog-deployment
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    #
+---
+# Source: catalog/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: catalog-db
+spec:
+  serviceName: "catalog-db-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-db
+    spec:
+      serviceAccountName: catalog-service-account
+      containers:
+        - name: catalog
+          image: "arsenet10/revive-catalog:db-01"
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3306
+          envFrom:
+            - configMapRef:
+                name: catalog-db-config
+            - secretRef:
+                name: catalog-db-secret
+          volumeMounts:
+            - name: catalog-db-storage
+              mountPath: /var/lib/mysql        # Mount path for persistence
+  volumeClaimTemplates:
+    - metadata:
+        name: catalog-db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi                     # Adjust storage size based on requirements
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=catalog,app.kubernetes.io/instance=catalog" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace default $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace default port-forward $POD_NAME 8080:$CONTAINER_PORT

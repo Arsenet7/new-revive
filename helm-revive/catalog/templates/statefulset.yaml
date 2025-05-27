@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "catalog.fullname" . }}-db
+spec:
+  serviceName: "catalog-db-service"
+  {{- if not .Values.autoscaling.enabledb }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "catalog.selectorLabelsdb" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "catalog.labelsdb" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "catalog.serviceAccountName" . }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tagdb | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.portdb }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.configmap.namedb }}
+            - secretRef:
+                name: {{ .Values.secret.namedb }}
+          volumeMounts:
+            - name: catalog-db-storage
+              mountPath: /var/lib/mysql        # Mount path for persistence
+  volumeClaimTemplates:
+    - metadata:
+        name: catalog-db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi                     # Adjust storage size based on requirements
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http

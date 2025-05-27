@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ui.fullname" . }}
+  labels:
+    {{- include "ui.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.ports }}
+      targetPort: {{ .Values.service.port }}
+      protocol: TCP
+      nodePort: 30090 # Only for NodePort, remove if using LoadBalancer
+  selector:
+    {{- include "ui.selectorLabels" . | nindent 4 }}

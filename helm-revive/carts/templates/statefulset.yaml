@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "carts.fullname" . }}-db
+spec:
+  serviceName: "cart-db-service"
+  {{- if not .Values.autoscaling.enabledb }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "carts.selectorLabelsdb" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "carts.labelsdb" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "carts.serviceAccountNamedb" . }}
+      containers:
+        - name: {{ .Chart.Name }}-db
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tagdb | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.portdb }}
+          #livenessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          #readinessProbe:
+          #  httpGet:
+          #    path: /
+          #    port: http
+          volumeMounts:
+            - name: cart-db-storage
+              mountPath: /home/dynamodb      # Mount path for DynamoDB storage
+  volumeClaimTemplates:
+    - metadata:
+        name: cart-db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi  
+          

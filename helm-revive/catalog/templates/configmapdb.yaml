@@ -1,0 +1,7 @@
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configmap.namedb }}
+data:
+  {{- toYaml .Values.configmap.datadb | nindent 2 }}
