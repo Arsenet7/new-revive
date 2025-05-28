@@ -10,6 +10,6 @@ spec:
     - port: {{ .Values.service.ports }}
       targetPort: {{ .Values.service.port }}
       protocol: TCP
-      nodePort: 30090 # Only for NodePort, remove if using LoadBalancer
+
   selector:
     {{- include "ui.selectorLabels" . | nindent 4 }}
