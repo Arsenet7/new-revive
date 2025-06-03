@@ -2,29 +2,25 @@ pipeline {
     agent {
         label 'new-revive-agent'
     }
-    
+
     parameters {
-        booleanParam(
-            name: 'SKIP_SONARQUBE', 
-            defaultValue: false, 
-            description: 'Skip SonarQube analysis and quality gate'
-        )
+        booleanParam(name: 'SKIP_SONAR', defaultValue: false, description: 'Skip SonarQube analysis and quality gate check')
     }
-    
+
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 2, unit: 'HOURS')
         timestamps()
     }
-    
+
     environment {
         SONAR_PROJECT_KEY = 'new-revive-ui'
         SONAR_PROJECT_NAME = 'New Revive UI'
-        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
-        IMAGE_TAG = "${BUILD_NUMBER}" // Or use Git commit hash: "${env.GIT_COMMIT.take(7)}"
-        HELM_CHART_PATH = 'helm-revive/ui' // Helm chart directory path
+        SCANNER_HOME = tool 'sonar'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        HELM_CHART_PATH = 'helm-revive/ui'
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
@@ -42,7 +38,7 @@ pipeline {
                 ])
             }
         }
-        
+
         stage('Build with Maven') {
             agent {
                 docker {
@@ -58,7 +54,7 @@ pipeline {
                 '''
             }
         }
-        
+
         stage('Test with Coverage') {
             agent {
                 docker {
@@ -86,7 +82,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Static Code Analysis') {
             parallel {
                 stage('Checkstyle') {
@@ -139,8 +135,11 @@ pipeline {
                 }
             }
         }
-        
+
         stage('SonarQube Analysis') {
+            when {
+                expression { return !params.SKIP_SONAR }
+            }
             steps {
                 script {
                     withSonarQubeEnv('sonar') {
@@ -171,54 +170,10 @@ pipeline {
                 }
             }
         }
-        
-        stage("Quality Gate") {
-            steps {
-                timeout(time: 1, unit: 'HOURS') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-        
-        stage('SonarQube Analysis') {
-            when {
-                expression { !params.SKIP_SONARQUBE }
-            }
-            steps {
-                script {
-                    withSonarQubeEnv('sonar') {
-                        withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
-                            sh '''
-                                cd new-revive-ui/ui
-                                ${SCANNER_HOME}/bin/sonar-scanner \
-                                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                                    -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
-                                    -Dsonar.projectVersion=${BUILD_NUMBER} \
-                                    -Dsonar.sources=src/main/java \
-                                    -Dsonar.java.binaries=target/classes \
-                                    -Dsonar.tests=src/test/java \
-                                    -Dsonar.java.test.binaries=target/test-classes \
-                                    -Dsonar.junit.reportPaths=target/surefire-reports \
-                                    -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
-                                    -Dsonar.language=java \
-                                    -Dsonar.java.coveragePlugin=jacoco \
-                                    -Dsonar.exclusions=**/*Test.java,**/*Config.java,**/model/**,**/entity/** \
-                                    -Dsonar.test.inclusions=**/*Test.java \
-                                    -Dsonar.dynamicAnalysis=reuseReports \
-                                    -Dsonar.checkstyle.reportPaths=target/checkstyle-result.xml \
-                                    -Dsonar.pmd.reportPaths=target/pmd.xml \
-                                    -Dsonar.findbugs.reportPaths=target/spotbugsXml.xml \
-                                    -Dsonar.login=${SONAR_TOKEN}
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-        
+
         stage("Quality Gate") {
             when {
-                expression { !params.SKIP_SONARQUBE }
+                expression { return !params.SKIP_SONAR }
             }
             steps {
                 timeout(time: 1, unit: 'HOURS') {
@@ -226,14 +181,13 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Update Helm Chart') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
             steps {
                 script {
-                    // Checkout main branch to update helm chart
                     checkout([
                         $class: 'GitSCM', 
                         branches: [[name: 'main']], 
@@ -245,24 +199,17 @@ pipeline {
                             url: 'https://github.com/Arsenet7/new-revive.git'
                         ]]
                     ])
-                    
+
                     dir('helm-repo') {
-                        // Configure git user
                         sh '''
                             git config user.name "Jenkins CI"
                             git config user.email "jenkins@company.com"
                         '''
-                        
-                        // Update the image tag in values.yaml
+
                         sh """
-                            # Option 1: Using sed to update values.yaml
                             sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/' ${HELM_CHART_PATH}/values.yaml
-                            
-                            # Option 2: Alternative - using yq if available (uncomment if you have yq installed)
-                            # yq eval '.image.tag = "${IMAGE_TAG}"' -i ${HELM_CHART_PATH}/values.yaml
                         """
-                        
-                        // Commit and push changes
+
                         sh """
                             git add ${HELM_CHART_PATH}/values.yaml
                             git commit -m "Update image tag to ${IMAGE_TAG} - Build ${BUILD_NUMBER}" || echo "No changes to commit"
@@ -273,25 +220,13 @@ pipeline {
             }
         }
     }
-    
+
     post {
         success {
-            script {
-                if (params.SKIP_SONARQUBE) {
-                    echo 'Build, tests, and Helm chart update completed successfully! (SonarQube skipped)'
-                } else {
-                    echo 'Build, tests, SonarQube analysis, and Helm chart update completed successfully!'
-                }
-            }
+            echo 'Build, tests, SonarQube analysis, and Helm chart update completed successfully!'
         }
         failure {
-            script {
-                if (params.SKIP_SONARQUBE) {
-                    echo 'Build, tests, or Helm chart update failed! (SonarQube skipped)'
-                } else {
-                    echo 'Build, tests, SonarQube analysis, or Helm chart update failed!'
-                }
-            }
+            echo 'Build, tests, SonarQube analysis, or Helm chart update failed!'
         }
         always {
             cleanWs()
