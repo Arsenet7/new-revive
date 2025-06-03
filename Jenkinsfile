@@ -193,7 +193,7 @@ pipeline {
                         submoduleCfg: [], 
                         userRemoteConfigs: [[
                             credentialsId: 'new-revive-ssh-key',
-                            url: 'https://github.com/Arsenet7/new-revive.git'
+                            url: 'git@github.com:Arsenet7/new-revive.git'
                         ]]
                     ])
 
