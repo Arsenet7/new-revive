@@ -183,6 +183,9 @@ pipeline {
         }
 
         stage('Update Helm Chart') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
             steps {
                 script {
                     checkout([
@@ -192,8 +195,8 @@ pipeline {
                         extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'helm-repo']], 
                         submoduleCfg: [], 
                         userRemoteConfigs: [[
-                            credentialsId: 'new-revive-ssh-key',
-                            url: 'git@github.com:Arsenet7/new-revive.git'
+                            credentialsId: 'github-token-id',
+                            url: 'https://github.com/Arsenet7/new-revive.git'
                         ]]
                     ])
 
@@ -203,21 +206,35 @@ pipeline {
                             git config user.email "jenkins@company.com"
                             
                             # Create and switch to main branch to avoid detached HEAD
-                            git checkout -b main origin/main
+                            git checkout -B main origin/main
                         '''
 
                         sh """
                             sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/' ${HELM_CHART_PATH}/values.yaml
                         """
 
-                        sh """
-                            git add ${HELM_CHART_PATH}/values.yaml
-                            git commit -m "Update image tag to ${IMAGE_TAG} - Build ${BUILD_NUMBER}"
-                            echo "Pushing changes to repository..."
-                            git push 
-                            echo "Successfully updated Helm chart with image tag ${IMAGE_TAG}"
-                            
-                        """
+                        script {
+                            // Use GitHub token for authentication
+                            withCredentials([usernamePassword(credentialsId: 'github-token-id', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_TOKEN')]) {
+                                sh """
+                                    # Configure Git to use the token for authentication
+                                    git remote set-url origin https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/Arsenet7/new-revive.git
+                                    
+                                    git add ${HELM_CHART_PATH}/values.yaml
+                                    
+                                    # Check if there are changes to commit
+                                    if git diff --staged --quiet; then
+                                        echo "No changes to commit - image tag is already up to date"
+                                    else
+                                        git commit -m "Update image tag to ${IMAGE_TAG} - Build ${BUILD_NUMBER}"
+                                        echo "Pushing changes to repository..."
+                                        git push origin main
+                                        echo "Successfully updated Helm chart with image tag ${IMAGE_TAG}"
+                                    fi
+                                """
+                                
+                            }
+                        }
                     }
                 }
             }
