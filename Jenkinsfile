@@ -183,6 +183,9 @@ pipeline {
         }
 
         stage('Update Helm Chart') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
             steps {
                 script {
                     checkout([
@@ -201,6 +204,9 @@ pipeline {
                         sh '''
                             git config user.name "Jenkins CI"
                             git config user.email "jenkins@company.com"
+                            
+                            # Create and switch to main branch to avoid detached HEAD
+                            git checkout -B main origin/main
                         '''
 
                         sh """
@@ -209,10 +215,23 @@ pipeline {
 
                         sh """
                             git add ${HELM_CHART_PATH}/values.yaml
-                            git commit -m "Update image tag to ${IMAGE_TAG} - Build ${BUILD_NUMBER}" || echo "No changes to commit"
-                            git push origin main
+                            
+                            # Check if there are changes to commit
+                            if git diff --staged --quiet; then
+                                echo "No changes to commit - image tag is already up to date"
+                            else
+                                git commit -m "Update image tag to ${IMAGE_TAG} - Build ${BUILD_NUMBER}"
+                                echo "Pushing changes to repository..."
+                                git push origin main
+                                echo "Successfully updated Helm chart with image tag ${IMAGE_TAG}"
+                            fi
                         """
                     }
+                }
+            }
+            post {
+                failure {
+                    echo "Failed to update Helm chart. Please check Git credentials and repository permissions."
                 }
             }
         }
