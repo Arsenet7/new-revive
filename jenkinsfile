@@ -1,0 +1,133 @@
+pipeline {
+    agent any
+    
+    environment {
+        ARGOCD_SERVER = '134.122.119.201:32129'
+        ARGOCD_CREDS = credentials('argocd-credential')
+        GITHUB_REPO = 'https://github.com/Arsenet7/new-revive.git'
+        TARGET_NAMESPACE = 's6arsene'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                // Optional: checkout the repo to validate or modify values
+                git branch: 'main', url: "${GITHUB_REPO}"
+            }
+        }
+        
+        stage('Install ArgoCD CLI') {
+            steps {
+                script {
+                    sh '''
+                        if ! command -v argocd &> /dev/null; then
+                            echo "Installing ArgoCD CLI..."
+                            curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+                            chmod +x argocd
+                            sudo mv argocd /usr/local/bin/argocd
+                        fi
+                        argocd version --client
+                    '''
+                }
+            }
+        }
+        
+        stage('Login to ArgoCD') {
+            steps {
+                script {
+                    sh '''
+                        argocd login $ARGOCD_SERVER \
+                            --username $ARGOCD_CREDS_USR \
+                            --password $ARGOCD_CREDS_PSW \
+                            --insecure
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy UI Application') {
+            steps {
+                script {
+                    deployApp('ui', 'helm-revive/ui')
+                }
+            }
+        }
+        
+        stage('Deploy Catalog Application') {
+            steps {
+                script {
+                    deployApp('catalog', 'helm-revive/catalog')
+                }
+            }
+        }
+        
+        stage('Deploy Assets Application') {
+            steps {
+                script {
+                    deployApp('assets', 'helm-revive/assets')
+                }
+            }
+        }
+        
+        stage('Wait for All Deployments') {
+            steps {
+                script {
+                    sh '''
+                        echo "Waiting for all applications to sync..."
+                        argocd app wait ui-app --timeout 300
+                        argocd app wait catalog-app --timeout 300
+                        argocd app wait assets-app --timeout 300
+                        
+                        echo "All applications status:"
+                        argocd app get ui-app
+                        argocd app get catalog-app
+                        argocd app get assets-app
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                // Logout from ArgoCD
+                sh 'argocd logout $ARGOCD_SERVER || true'
+            }
+        }
+        success {
+            echo "All deployments successful!"
+        }
+        failure {
+            echo "One or more deployments failed!"
+        }
+    }
+}
+
+// Function to deploy individual applications
+def deployApp(appName, chartPath) {
+    sh """
+        # Check if application exists
+        if argocd app list | grep -q ${appName}-app; then
+            echo "Application ${appName}-app exists, updating..."
+            argocd app set ${appName}-app \
+                --repo ${env.GITHUB_REPO} \
+                --path ${chartPath} \
+                --dest-server https://kubernetes.default.svc \
+                --dest-namespace ${env.TARGET_NAMESPACE}
+        else
+            echo "Creating new application ${appName}-app..."
+            argocd app create ${appName}-app \
+                --repo ${env.GITHUB_REPO} \
+                --path ${chartPath} \
+                --dest-server https://kubernetes.default.svc \
+                --dest-namespace ${env.TARGET_NAMESPACE} \
+                --sync-policy automated \
+                --auto-prune \
+                --self-heal
+        fi
+        
+        echo "Syncing application ${appName}-app..."
+        argocd app sync ${appName}-app
+    """
+}
