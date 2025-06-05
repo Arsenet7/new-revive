@@ -19,7 +19,7 @@ pipeline {
         DOCKERHUB_USERNAME = 'arsenet10'
         DOCKER_IMAGE_ASSET = "${DOCKERHUB_USERNAME}/new-revive"
         BUILD_VERSION = "${env.BUILD_NUMBER}"
-        HELM_CHART_PATH = 'helm-revive/asset'
+        HELM_CHART_PATH = 'helm-revive/assets'
     }
 
     stages {
