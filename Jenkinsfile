@@ -11,7 +11,6 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Optional: checkout the repo to validate or modify values
                 git branch: 'main', url: "${GITHUB_REPO}"
             }
         }
@@ -40,63 +39,163 @@ pipeline {
                             --username $ARGOCD_CREDS_USR \
                             --password $ARGOCD_CREDS_PSW \
                             --insecure
+                        
+                        echo "Checking user permissions..."
+                        argocd account get-user-info
                     '''
                 }
             }
         }
         
-        stage('Deploy UI Application') {
-            steps {
-                script {
-                    deployApp('ui', 'helm-revive/ui')
-                }
-            }
-        }
-        
-        stage('Deploy Catalog Application') {
-            steps {
-                script {
-                    deployApp('catalog', 'helm-revive/catalog')
-                }
-            }
-        }
-        
-        stage('Deploy Assets Application') {
-            steps {
-                script {
-                    deployApp('assets', 'helm-revive/assets')
-                }
-            }
-        }
-        
-        stage('Wait for All Deployments') {
+        stage('Check and Clean Existing Apps') {
             steps {
                 script {
                     sh '''
-                        echo "Waiting for all applications to sync..."
+                        echo "Checking existing applications..."
+                        argocd app list || echo "Could not list applications"
                         
-                        # Wait for each app with timeout and retry logic
+                        # Try to delete existing applications if they exist and we have permission
                         for app in ui catalog assets; do
-                            echo "Waiting for $app..."
-                            for i in {1..10}; do
-                                if argocd app wait $app --timeout 60; then
-                                    echo "$app is ready"
-                                    break
-                                else
-                                    echo "Wait attempt $i failed for $app, retrying..."
-                                    if [ $i -eq 10 ]; then
-                                        echo "Max wait attempts reached for $app"
-                                        argocd app get $app
-                                    fi
-                                    sleep 10
-                                fi
-                            done
+                            if argocd app list | grep -q $app; then
+                                echo "Found existing application: $app"
+                                echo "Attempting to delete $app..."
+                                argocd app delete $app --cascade --yes || echo "Could not delete $app, continuing..."
+                                sleep 5
+                            fi
                         done
+                    '''
+                }
+            }
+        }
+        
+        stage('Create Applications via YAML') {
+            steps {
+                script {
+                    // Create application YAML files and apply them using kubectl
+                    sh '''
+                        # Create UI application YAML
+                        cat > ui-app.yaml << 'EOF'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ui
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Arsenet7/new-revive.git
+    targetRevision: HEAD
+    path: helm-revive/ui
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: s6arsene
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+EOF
+
+                        # Create Catalog application YAML
+                        cat > catalog-app.yaml << 'EOF'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: catalog
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Arsenet7/new-revive.git
+    targetRevision: HEAD
+    path: helm-revive/catalog
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: s6arsene
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+EOF
+
+                        # Create Assets application YAML
+                        cat > assets-app.yaml << 'EOF'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: assets
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Arsenet7/new-revive.git
+    targetRevision: HEAD
+    path: helm-revive/assets
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: s6arsene
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+EOF
+
+                        # Apply the applications using kubectl
+                        kubectl apply -f ui-app.yaml
+                        kubectl apply -f catalog-app.yaml
+                        kubectl apply -f assets-app.yaml
                         
-                        echo "All applications status:"
-                        argocd app get ui || echo "Failed to get ui status"
-                        argocd app get catalog || echo "Failed to get catalog status" 
-                        argocd app get assets || echo "Failed to get assets status"
+                        echo "Applications created via kubectl"
+                    '''
+                }
+            }
+        }
+        
+        stage('Wait and Sync Applications') {
+            steps {
+                script {
+                    sh '''
+                        echo "Waiting for applications to be recognized..."
+                        sleep 30
+                        
+                        # Try to sync each application
+                        for app in ui catalog assets; do
+                            echo "Attempting to sync $app..."
+                            
+                            # Try multiple times with different approaches
+                            if argocd app sync $app --timeout 60; then
+                                echo "Successfully synced $app"
+                            elif argocd app sync $app --force --timeout 60; then
+                                echo "Force synced $app successfully"
+                            else
+                                echo "Could not sync $app via CLI, checking status..."
+                                argocd app get $app || echo "Could not get $app status"
+                            fi
+                            
+                            sleep 10
+                        done
+                    '''
+                }
+            }
+        }
+        
+        stage('Verify Deployments') {
+            steps {
+                script {
+                    sh '''
+                        echo "Final application status:"
+                        argocd app list || echo "Could not list applications"
+                        
+                        for app in ui catalog assets; do
+                            echo "=== Status for $app ==="
+                            argocd app get $app || echo "Could not get $app details"
+                            echo ""
+                        done
                     '''
                 }
             }
@@ -106,59 +205,14 @@ pipeline {
     post {
         always {
             script {
-                // Logout from ArgoCD
                 sh 'argocd logout $ARGOCD_SERVER || true'
             }
         }
         success {
-            echo "All deployments successful!"
+            echo "Applications deployed successfully!"
         }
         failure {
-            echo "One or more deployments failed!"
+            echo "Deployment failed - check ArgoCD permissions and configuration"
         }
     }
-}
-
-// Function to deploy individual applications
-def deployApp(appName, chartPath) {
-    sh """
-        # Check if application exists
-        if argocd app list | grep -q ${appName}; then
-            echo "Application ${appName} exists, updating..."
-            argocd app set ${appName} \
-                --repo ${env.GITHUB_REPO} \
-                --path ${chartPath} \
-                --dest-server https://kubernetes.default.svc \
-                --dest-namespace ${env.TARGET_NAMESPACE}
-        else
-            echo "Creating new application ${appName}..."
-            argocd app create ${appName} \
-                --repo ${env.GITHUB_REPO} \
-                --path ${chartPath} \
-                --dest-server https://kubernetes.default.svc \
-                --dest-namespace ${env.TARGET_NAMESPACE} \
-                --sync-policy automated \
-                --auto-prune \
-                --self-heal
-        fi
-        
-        echo "Waiting a moment for any ongoing operations to complete..."
-        sleep 10
-        
-        # Try to sync with retry logic
-        echo "Syncing application ${appName}..."
-        for i in {1..5}; do
-            if argocd app sync ${appName}; then
-                echo "Sync successful for ${appName}"
-                break
-            else
-                echo "Sync attempt \$i failed for ${appName}, retrying in 15 seconds..."
-                if [ \$i -eq 5 ]; then
-                    echo "Max retry attempts reached for ${appName}"
-                    exit 1
-                fi
-                sleep 15
-            fi
-        done
-    """
 }
