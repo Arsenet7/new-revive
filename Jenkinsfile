@@ -74,14 +74,29 @@ pipeline {
                 script {
                     sh '''
                         echo "Waiting for all applications to sync..."
-                        argocd app wait ui-app --timeout 300
-                        argocd app wait catalog-app --timeout 300
-                        argocd app wait assets-app --timeout 300
+                        
+                        # Wait for each app with timeout and retry logic
+                        for app in ui catalog assets; do
+                            echo "Waiting for $app..."
+                            for i in {1..10}; do
+                                if argocd app wait $app --timeout 60; then
+                                    echo "$app is ready"
+                                    break
+                                else
+                                    echo "Wait attempt $i failed for $app, retrying..."
+                                    if [ $i -eq 10 ]; then
+                                        echo "Max wait attempts reached for $app"
+                                        argocd app get $app
+                                    fi
+                                    sleep 10
+                                fi
+                            done
+                        done
                         
                         echo "All applications status:"
-                        argocd app get ui-app
-                        argocd app get catalog-app
-                        argocd app get assets-app
+                        argocd app get ui || echo "Failed to get ui status"
+                        argocd app get catalog || echo "Failed to get catalog status" 
+                        argocd app get assets || echo "Failed to get assets status"
                     '''
                 }
             }
@@ -108,16 +123,16 @@ pipeline {
 def deployApp(appName, chartPath) {
     sh """
         # Check if application exists
-        if argocd app list | grep -q ${appName}-app; then
-            echo "Application ${appName}-app exists, updating..."
-            argocd app set ${appName}-app \
+        if argocd app list | grep -q ${appName}; then
+            echo "Application ${appName} exists, updating..."
+            argocd app set ${appName} \
                 --repo ${env.GITHUB_REPO} \
                 --path ${chartPath} \
                 --dest-server https://kubernetes.default.svc \
                 --dest-namespace ${env.TARGET_NAMESPACE}
         else
-            echo "Creating new application ${appName}-app..."
-            argocd app create ${appName}-app \
+            echo "Creating new application ${appName}..."
+            argocd app create ${appName} \
                 --repo ${env.GITHUB_REPO} \
                 --path ${chartPath} \
                 --dest-server https://kubernetes.default.svc \
@@ -127,7 +142,23 @@ def deployApp(appName, chartPath) {
                 --self-heal
         fi
         
-        echo "Syncing application ${appName}-app..."
-        argocd app sync ${appName}-app
+        echo "Waiting a moment for any ongoing operations to complete..."
+        sleep 10
+        
+        # Try to sync with retry logic
+        echo "Syncing application ${appName}..."
+        for i in {1..5}; do
+            if argocd app sync ${appName}; then
+                echo "Sync successful for ${appName}"
+                break
+            else
+                echo "Sync attempt \$i failed for ${appName}, retrying in 15 seconds..."
+                if [ \$i -eq 5 ]; then
+                    echo "Max retry attempts reached for ${appName}"
+                    exit 1
+                fi
+                sleep 15
+            fi
+        done
     """
 }
