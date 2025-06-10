@@ -42,24 +42,6 @@ pipeline {
             }
         }
         
-        stage('Create Namespace') {
-            steps {
-                script {
-                    sh '''
-                        echo "Creating namespace $TARGET_NAMESPACE if it doesn't exist..."
-                        
-                        # Try to create namespace using kubectl if available
-                        if command -v kubectl &> /dev/null; then
-                            kubectl create namespace $TARGET_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-                            echo "✓ Namespace $TARGET_NAMESPACE ensured via kubectl"
-                        else
-                            echo "⚠ kubectl not available, namespace creation will be handled by ArgoCD sync options"
-                        fi
-                    '''
-                }
-            }
-        }
-        
         stage('Update Applications Without Values File') {
             steps {
                 script {
