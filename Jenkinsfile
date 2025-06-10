@@ -82,7 +82,8 @@ pipeline {
                                 --path helm-revive/ui \
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
-                                --project default; then
+                                --project default \
+                                --values-literal-file values.yaml; then
                                 echo "✓ Successfully updated UI application"
                             else
                                 echo "✗ Failed to update UI application"
@@ -95,7 +96,8 @@ pipeline {
                                 --path helm-revive/ui \
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
-                                --project default; then
+                                --project default \
+                                --values-literal-file values.yaml; then
                                 echo "✓ Successfully created UI application"
                             else
                                 echo "✗ Failed to create UI application"
@@ -129,7 +131,8 @@ pipeline {
                                 --path helm-revive/catalog \
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
-                                --project default; then
+                                --project default \
+                                --values-literal-file values.yaml; then
                                 echo "✓ Successfully updated Catalog application"
                             else
                                 echo "✗ Failed to update Catalog application"
@@ -141,7 +144,8 @@ pipeline {
                                 --path helm-revive/catalog \
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
-                                --project default; then
+                                --project default \
+                                --values-literal-file values.yaml; then
                                 echo "✓ Successfully created Catalog application"
                             else
                                 echo "✗ Failed to create Catalog application"
@@ -174,7 +178,8 @@ pipeline {
                                 --path helm-revive/assets \
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
-                                --project default; then
+                                --project default \
+                                --values-literal-file values.yaml; then
                                 echo "✓ Successfully updated Assets application"
                             else
                                 echo "✗ Failed to update Assets application"
@@ -186,7 +191,8 @@ pipeline {
                                 --path helm-revive/assets \
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
-                                --project default; then
+                                --project default \
+                                --values-literal-file values.yaml; then
                                 echo "✓ Successfully created Assets application"
                             else
                                 echo "✗ Failed to create Assets application"
