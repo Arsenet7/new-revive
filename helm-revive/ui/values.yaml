@@ -17,10 +17,10 @@ configmap:
 replicaCount: 1
 
 image:
-  repository: arsenet10/revive-ui
+  repository: "arsenet10/revive-ui"
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "57"
+  tag: "60"
 
 imagePullSecrets: []
 nameOverride: ""
