@@ -184,8 +184,8 @@ pipeline {
                             echo "❌ All applications need troubleshooting"
                             echo ""
                             echo "Common fixes:"
-                            echo "1. Check if namespace 's6arserne' exists: kubectl get namespace s6arserne"
-                            echo "2. Create namespace manually: kubectl create namespace s6arserne"
+                            echo "1. Check if namespace 's6arsene' exists: kubectl get namespace s6arsene"
+                            echo "2. Create namespace manually: kubectl create namespace s6arsene"
                             echo "3. Check Helm chart validity in repository"
                             echo "4. Verify values.yaml files exist in each chart directory"
                         fi
@@ -202,7 +202,7 @@ pipeline {
             echo "✅ Next Steps:"
             echo "1. Check ArgoCD UI: http://134.122.119.201:32129"
             echo "2. Verify applications are healthy and synced"
-            echo "3. Check pods in namespace: kubectl get pods -n s6arserne"
+            echo "3. Check pods in namespace: kubectl get pods -n s6arsene"
             echo "4. Applications will auto-sync when you push changes to repository"
         }
         failure {
