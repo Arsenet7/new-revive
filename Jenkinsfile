@@ -5,7 +5,7 @@ pipeline {
         ARGOCD_SERVER = '134.122.119.201:32129'
         ARGOCD_CREDS = credentials('argocd-credential')
         GITHUB_REPO = 'https://github.com/Arsenet7/new-revive.git'
-        TARGET_NAMESPACE = 's6arsene'
+        TARGET_NAMESPACE = 's6arserne'
     }
     
     stages {
@@ -25,201 +25,251 @@ pipeline {
             }
         }
         
-        stage('Get ArgoCD Token') {
-            steps {
-                script {
-                    env.ARGOCD_TOKEN = sh(
-                        script: '''
-                            # Login and get token
-                            argocd login $ARGOCD_SERVER \
-                                --username $ARGOCD_CREDS_USR \
-                                --password $ARGOCD_CREDS_PSW \
-                                --insecure
-                            
-                            # Get auth token
-                            argocd account get-user-info --output json | grep -o '"iat":[0-9]*' | cut -d':' -f2 || echo ""
-                        ''',
-                        returnStdout: true
-                    ).trim()
-                    
-                    // Alternative: get session token
-                    env.ARGOCD_SESSION = sh(
-                        script: '''
-                            curl -k -X POST https://$ARGOCD_SERVER/api/v1/session \
-                                -H "Content-Type: application/json" \
-                                -d '{"username":"'$ARGOCD_CREDS_USR'","password":"'$ARGOCD_CREDS_PSW'"}' \
-                                | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo ""
-                        ''',
-                        returnStdout: true
-                    ).trim()
-                    
-                    echo "Session token obtained: ${env.ARGOCD_SESSION ? 'Yes' : 'No'}"
-                }
-            }
-        }
-        
-        stage('Create Applications via API') {
-            steps {
-                script {
-                    def apps = [
-                        [name: 'ui', path: 'helm-revive/ui'],
-                        [name: 'catalog', path: 'helm-revive/catalog'],
-                        [name: 'assets', path: 'helm-revive/assets']
-                    ]
-                    
-                    apps.each { app ->
-                        def appSpec = [
-                            apiVersion: 'argoproj.io/v1alpha1',
-                            kind: 'Application',
-                            metadata: [
-                                name: app.name,
-                                namespace: 'argocd'
-                            ],
-                            spec: [
-                                project: 'default',
-                                source: [
-                                    repoURL: env.GITHUB_REPO,
-                                    targetRevision: 'HEAD',
-                                    path: app.path,
-                                    helm: [
-                                        valueFiles: ['values.yaml']
-                                    ]
-                                ],
-                                destination: [
-                                    server: 'https://kubernetes.default.svc',
-                                    namespace: env.TARGET_NAMESPACE
-                                ],
-                                syncPolicy: [
-                                    syncOptions: ['CreateNamespace=true'],
-                                    automated: [
-                                        prune: true,
-                                        selfHeal: true
-                                    ]
-                                ]
-                            ]
-                        ]
-                        
-                        def jsonPayload = writeJSON returnText: true, json: appSpec
-                        
-                        script {
-                            sh """
-                                echo "Creating/updating application: ${app.name}"
-                                
-                                # Try to create the application
-                                HTTP_CODE=\$(curl -k -w "%{http_code}" -o response.json -X POST \\
-                                    https://$ARGOCD_SERVER/api/v1/applications \\
-                                    -H "Authorization: Bearer $ARGOCD_SESSION" \\
-                                    -H "Content-Type: application/json" \\
-                                    -d '${jsonPayload}')
-                                
-                                echo "HTTP Response Code: \$HTTP_CODE"
-                                cat response.json || echo "No response body"
-                                
-                                # If application already exists (409), try to update it
-                                if [ "\$HTTP_CODE" = "409" ]; then
-                                    echo "Application exists, attempting to update..."
-                                    HTTP_CODE=\$(curl -k -w "%{http_code}" -o response.json -X PUT \\
-                                        https://$ARGOCD_SERVER/api/v1/applications/${app.name} \\
-                                        -H "Authorization: Bearer $ARGOCD_SESSION" \\
-                                        -H "Content-Type: application/json" \\
-                                        -d '${jsonPayload}')
-                                    echo "Update HTTP Response Code: \$HTTP_CODE"
-                                    cat response.json || echo "No response body"
-                                fi
-                                
-                                # Check if successful (2xx response)
-                                if [[ "\$HTTP_CODE" =~ ^2[0-9][0-9]\$ ]]; then
-                                    echo "✓ Successfully processed ${app.name}"
-                                else
-                                    echo "✗ Failed to process ${app.name}"
-                                fi
-                            """
-                        }
-                        
-                        sleep(2) // Small delay between applications
-                    }
-                }
-            }
-        }
-        
-        stage('Wait for Applications to Initialize') {
+        stage('Login and Investigate ArgoCD Setup') {
             steps {
                 script {
                     sh '''
-                        echo "Waiting 30 seconds for applications to initialize..."
-                        sleep 30
+                        echo "Logging into ArgoCD..."
+                        argocd login $ARGOCD_SERVER \
+                            --username $ARGOCD_CREDS_USR \
+                            --password $ARGOCD_CREDS_PSW \
+                            --insecure
+                        
+                        echo "=== Current ArgoCD Setup ==="
+                        echo "Available projects:"
+                        argocd proj list || echo "Could not list projects"
+                        
+                        echo ""
+                        echo "Default project details:"
+                        argocd proj get default || echo "Could not get default project details"
+                        
+                        echo ""
+                        echo "Existing applications:"
+                        argocd app list || echo "Could not list applications"
+                        
+                        echo ""
+                        echo "User permissions:"
+                        argocd account get-user-info || echo "Could not get user info"
+                        
+                        echo ""
+                        echo "Checking if we can create apps in default project..."
+                        echo "This will help diagnose the 'app is not allowed in project default' error"
                     '''
                 }
             }
         }
         
-        stage('Trigger Sync via API') {
+        stage('Set Project to Default') {
             steps {
                 script {
-                    def apps = ['ui', 'catalog', 'assets']
-                    
-                    apps.each { app ->
-                        script {
-                            sh """
-                                echo "Triggering sync for ${app}..."
-                                
-                                HTTP_CODE=\$(curl -k -w "%{http_code}" -o sync_response.json -X POST \\
-                                    https://$ARGOCD_SERVER/api/v1/applications/${app}/sync \\
-                                    -H "Authorization: Bearer $ARGOCD_SESSION" \\
-                                    -H "Content-Type: application/json" \\
-                                    -d '{"prune": true, "dryRun": false}')
-                                
-                                echo "Sync HTTP Response Code for ${app}: \$HTTP_CODE"
-                                cat sync_response.json || echo "No sync response body"
-                                
-                                if [[ "\$HTTP_CODE" =~ ^2[0-9][0-9]\$ ]]; then
-                                    echo "✓ Successfully triggered sync for ${app}"
-                                else
-                                    echo "✗ Failed to trigger sync for ${app}"
-                                fi
-                            """
-                        }
-                        sleep(5)
-                    }
+                    env.ARGOCD_PROJECT = 'default'
+                    echo "Using ArgoCD project: ${env.ARGOCD_PROJECT}"
                 }
             }
         }
         
-        stage('Monitor Deployment Status') {
+        stage('Create UI Application') {
             steps {
                 script {
                     sh '''
-                        echo "Monitoring deployment status..."
+                        echo "Creating UI application in default project..."
+                        
+                        # Check if UI application already exists
+                        if argocd app list | grep -E "(^|/)ui($|[[:space:]])"; then
+                            echo "UI application already exists, attempting to update..."
+                            if argocd app set ui \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/ui \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default; then
+                                echo "✓ Successfully updated UI application"
+                            else
+                                echo "✗ Failed to update UI application"
+                                echo "This may be due to permissions or project restrictions"
+                            fi
+                        else
+                            echo "Creating new UI application..."
+                            if argocd app create ui \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/ui \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default; then
+                                echo "✓ Successfully created UI application"
+                            else
+                                echo "✗ Failed to create UI application"
+                                echo "Error details above - this may need manual creation"
+                            fi
+                        fi
+                        
+                        # Verify creation
+                        sleep 3
+                        if argocd app get ui >/dev/null 2>&1; then
+                            echo "✓ UI application exists and is accessible"
+                        else
+                            echo "✗ UI application not found after creation attempt"
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Create Catalog Application') {
+            steps {
+                script {
+                    sh '''
+                        echo "Creating Catalog application in default project..."
+                        
+                        # Check if Catalog application already exists
+                        if argocd app list | grep -E "(^|/)catalog($|[[:space:]])"; then
+                            echo "Catalog application already exists, attempting to update..."
+                            if argocd app set catalog \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/catalog \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default; then
+                                echo "✓ Successfully updated Catalog application"
+                            else
+                                echo "✗ Failed to update Catalog application"
+                            fi
+                        else
+                            echo "Creating new Catalog application..."
+                            if argocd app create catalog \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/catalog \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default; then
+                                echo "✓ Successfully created Catalog application"
+                            else
+                                echo "✗ Failed to create Catalog application"
+                            fi
+                        fi
+                        
+                        # Verify creation
+                        sleep 3
+                        if argocd app get catalog >/dev/null 2>&1; then
+                            echo "✓ Catalog application exists and is accessible"
+                        else
+                            echo "✗ Catalog application not found after creation attempt"
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Create Assets Application') {
+            steps {
+                script {
+                    sh '''
+                        echo "Creating Assets application in default project..."
+                        
+                        # Check if Assets application already exists
+                        if argocd app list | grep -E "(^|/)assets($|[[:space:]])"; then
+                            echo "Assets application already exists, attempting to update..."
+                            if argocd app set assets \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/assets \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default; then
+                                echo "✓ Successfully updated Assets application"
+                            else
+                                echo "✗ Failed to update Assets application"
+                            fi
+                        else
+                            echo "Creating new Assets application..."
+                            if argocd app create assets \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/assets \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default; then
+                                echo "✓ Successfully created Assets application"
+                            else
+                                echo "✗ Failed to create Assets application"
+                            fi
+                        fi
+                        
+                        # Verify creation
+                        sleep 3
+                        if argocd app get assets >/dev/null 2>&1; then
+                            echo "✓ Assets application exists and is accessible"
+                        else
+                            echo "✗ Assets application not found after creation attempt"
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Enable Auto Sync') {
+            steps {
+                script {
+                    sh '''
+                        echo "Attempting to enable auto-sync for applications..."
                         
                         for app in ui catalog assets; do
-                            echo "Checking status of $app..."
-                            
-                            for i in {1..12}; do  # Check for 2 minutes
-                                HTTP_CODE=$(curl -k -w "%{http_code}" -o status.json -X GET \\
-                                    https://$ARGOCD_SERVER/api/v1/applications/$app \\
-                                    -H "Authorization: Bearer $ARGOCD_SESSION")
-                                
-                                if [ "$HTTP_CODE" = "200" ]; then
-                                    SYNC_STATUS=$(cat status.json | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "Unknown")
-                                    HEALTH_STATUS=$(cat status.json | grep -o '"status":"[^"]*"' | tail -1 | cut -d'"' -f4 || echo "Unknown")
-                                    
-                                    echo "$app - Sync: $SYNC_STATUS, Health: $HEALTH_STATUS"
-                                    
-                                    if [ "$SYNC_STATUS" = "Synced" ] && [ "$HEALTH_STATUS" = "Healthy" ]; then
-                                        echo "✓ $app is deployed successfully"
-                                        break
-                                    fi
-                                else
-                                    echo "Could not get status for $app (HTTP: $HTTP_CODE)"
-                                fi
-                                
-                                if [ $i -eq 12 ]; then
-                                    echo "⚠ $app deployment timed out"
-                                else
-                                    sleep 10
-                                fi
-                            done
+                            if argocd app get $app >/dev/null 2>&1; then
+                                echo "Enabling auto-sync for $app..."
+                                argocd app set $app --sync-policy automated --auto-prune --self-heal || echo "Could not enable auto-sync for $app"
+                            else
+                                echo "Skipping auto-sync for $app (application not found)"
+                            fi
+                            sleep 2
                         done
+                    '''
+                }
+            }
+        }
+        
+        stage('Sync Applications') {
+            steps {
+                script {
+                    sh '''
+                        echo "Attempting to sync applications..."
+                        
+                        for app in ui catalog assets; do
+                            if argocd app get $app >/dev/null 2>&1; then
+                                echo "Syncing $app..."
+                                
+                                # Try multiple sync approaches
+                                if argocd app sync $app --timeout 120; then
+                                    echo "✓ Successfully synced $app"
+                                elif argocd app sync $app --force --timeout 120; then
+                                    echo "✓ Force synced $app successfully"
+                                else
+                                    echo "⚠ Could not sync $app"
+                                fi
+                            else
+                                echo "Skipping sync for $app (application not found)"
+                            fi
+                            
+                            sleep 10
+                        done
+                    '''
+                }
+            }
+        }
+        
+        stage('Refresh and Wait') {
+            steps {
+                script {
+                    sh '''
+                        echo "Refreshing applications to detect repository changes..."
+                        
+                        for app in ui catalog assets; do
+                            if argocd app get $app >/dev/null 2>&1; then
+                                echo "Refreshing $app..."
+                                argocd app refresh $app || echo "Could not refresh $app"
+                            fi
+                            sleep 5
+                        done
+                        
+                        echo "Waiting 30 seconds for operations to complete..."
+                        sleep 30
                     '''
                 }
             }
@@ -229,18 +279,48 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        echo "=== Final Deployment Status ==="
+                        echo "=== Final Status Report ==="
+                        echo "Current applications in ArgoCD:"
+                        argocd app list
                         
-                        # Login with CLI for final status check
-                        argocd login $ARGOCD_SERVER \
-                            --username $ARGOCD_CREDS_USR \
-                            --password $ARGOCD_CREDS_PSW \
-                            --insecure
+                        echo ""
+                        echo "=== Target Applications Status ==="
+                        for app in ui catalog assets; do
+                            echo "--- $app ---"
+                            if argocd app get $app 2>/dev/null; then
+                                echo "✓ $app exists and is accessible"
+                            else
+                                echo "✗ $app not found or inaccessible"
+                            fi
+                            echo ""
+                        done
                         
-                        echo "Applications in ArgoCD:"
-                        argocd app list | grep -E "(ui|catalog|assets)" || echo "No matching applications found"
+                        echo "=== Summary ==="
+                        CREATED_COUNT=0
+                        for app in ui catalog assets; do
+                            if argocd app get $app >/dev/null 2>&1; then
+                                CREATED_COUNT=$((CREATED_COUNT + 1))
+                            fi
+                        done
                         
-                        argocd logout $ARGOCD_SERVER
+                        echo "Successfully created/found: $CREATED_COUNT out of 3 applications"
+                        
+                        if [ $CREATED_COUNT -lt 3 ]; then
+                            echo ""
+                            echo "=== Manual Creation Instructions ==="
+                            echo "For any missing applications, create them manually in ArgoCD UI:"
+                            echo "1. Go to: http://134.122.119.201:32129"
+                            echo "2. Login with admin credentials"
+                            echo "3. Click 'NEW APP' and use these settings:"
+                            echo ""
+                            echo "   Project: default"
+                            echo "   Repository: $GITHUB_REPO"
+                            echo "   Namespace: s6arserne"
+                            echo ""
+                            echo "   For UI: Path = helm-revive/ui, Name = ui"
+                            echo "   For Catalog: Path = helm-revive/catalog, Name = catalog"
+                            echo "   For Assets: Path = helm-revive/assets, Name = assets"
+                        fi
                     '''
                 }
             }
@@ -249,20 +329,21 @@ pipeline {
     
     post {
         success {
-            echo "🎉 Automated deployment completed successfully!"
-            echo "All applications should now be deployed to the s6arsene namespace"
+            echo "🎉 Pipeline completed!"
+            echo ""
+            echo "✅ Check ArgoCD UI: http://134.122.119.201:32129"
+            echo "📁 Target namespace: s6arserne"
+            echo ""
+            echo "If applications were created successfully, they should auto-sync when you push changes to the repository."
         }
         failure {
-            echo "❌ Automated deployment failed"
-            echo "Check the logs above for specific errors"
+            echo "❌ Pipeline failed"
+            echo "This is likely due to ArgoCD permission or project configuration issues."
+            echo "Try the manual creation approach shown in the logs above."
         }
         always {
             script {
-                sh '''
-                    # Cleanup
-                    rm -f response.json sync_response.json status.json || true
-                    argocd logout $ARGOCD_SERVER || true
-                '''
+                sh 'argocd logout $ARGOCD_SERVER 2>/dev/null || true'
             }
         }
     }
