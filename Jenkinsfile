@@ -19,6 +19,8 @@ pipeline {
         SCANNER_HOME = tool 'sonar'
         IMAGE_TAG = "${BUILD_NUMBER}"
         HELM_CHART_PATH = 'helm-revive/ui'
+        DOCKER_REPO = 'arsenet10/revive-ui'
+        DOCKER_IMAGE = "${DOCKER_REPO}:${IMAGE_TAG}"
     }
 
     stages {
@@ -182,6 +184,95 @@ pipeline {
             }
         }
 
+        stage('Package Application') {
+            agent {
+                docker {
+                    image 'maven:3.8-openjdk-17'
+                    reuseNode true
+                }
+            }
+            steps {
+                sh '''
+                    cd new-revive-ui/ui
+                    mvn package -DskipTests
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'new-revive-ui/ui/target/*.jar', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Build and Push Docker Image') {
+            steps {
+                script {
+                    // Build Docker image
+                    sh '''
+                        cd new-revive-ui/ui
+                        echo "Building Docker image: ${DOCKER_IMAGE}"
+                        
+                        # Create Dockerfile if it doesn't exist
+                        if [ ! -f Dockerfile ]; then
+                            echo "Creating Dockerfile..."
+                            cat > Dockerfile << 'EOF'
+FROM openjdk:17-jre-slim
+
+WORKDIR /app
+
+# Copy the jar file
+COPY target/*.jar app.jar
+
+# Expose port (adjust as needed)
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# Run the application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+                        fi
+                        
+                        # Build the Docker image
+                        docker build -t ${DOCKER_IMAGE} .
+                        docker tag ${DOCKER_IMAGE} ${DOCKER_REPO}:latest
+                    '''
+                    
+                    // Push to Docker Hub
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh '''
+                            echo "Logging into Docker Hub..."
+                            echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+                            
+                            echo "Pushing Docker image: ${DOCKER_IMAGE}"
+                            docker push ${DOCKER_IMAGE}
+                            docker push ${DOCKER_REPO}:latest
+                            
+                            echo "Successfully pushed Docker image!"
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    // Clean up local images to save space
+                    sh '''
+                        docker rmi ${DOCKER_IMAGE} || true
+                        docker rmi ${DOCKER_REPO}:latest || true
+                        docker system prune -f || true
+                    '''
+                }
+                success {
+                    echo "Docker image built and pushed successfully: ${DOCKER_IMAGE}"
+                }
+                failure {
+                    echo "Failed to build or push Docker image"
+                }
+            }
+        }
+
         stage('Update Helm Chart') {
             steps {
                 script {
@@ -207,7 +298,11 @@ pipeline {
                         '''
 
                         sh """
+                            # Update image tag in values.yaml
                             sed -i 's/tag: .*/tag: "${IMAGE_TAG}"/' ${HELM_CHART_PATH}/values.yaml
+                            
+                            # Update image repository if needed
+                            sed -i 's|repository: .*|repository: "${DOCKER_REPO}"|' ${HELM_CHART_PATH}/values.yaml
                         """
 
                         script {
@@ -223,10 +318,10 @@ pipeline {
                                     if git diff --staged --quiet; then
                                         echo "No changes to commit - image tag is already up to date"
                                     else
-                                        git commit -m "Update image tag to ${IMAGE_TAG} - Build ${BUILD_NUMBER}"
+                                        git commit -m "Update UI image to ${DOCKER_IMAGE} - Build ${BUILD_NUMBER}"
                                         echo "Pushing changes to repository..."
                                         git push origin main
-                                        echo "Successfully updated Helm chart with image tag ${IMAGE_TAG}"
+                                        echo "Successfully updated Helm chart with image ${DOCKER_IMAGE}"
                                     fi
                                 """
                                 
@@ -245,10 +340,11 @@ pipeline {
 
     post {
         success {
-            echo 'Build, tests, SonarQube analysis, and Helm chart update completed successfully!'
+            echo 'Build, tests, SonarQube analysis, Docker build/push, and Helm chart update completed successfully!'
+            echo "Docker image: ${DOCKER_IMAGE}"
         }
         failure {
-            echo 'Build, tests, SonarQube analysis, or Helm chart update failed!'
+            echo 'Pipeline failed! Check the logs for details.'
         }
         always {
             cleanWs()
