@@ -212,28 +212,6 @@ pipeline {
                         cd new-revive-ui/ui
                         echo "Building Docker image: ${DOCKER_IMAGE}"
                         
-                        # Create Dockerfile if it doesn't exist
-                        if [ ! -f Dockerfile ]; then
-                            echo "Creating Dockerfile..."
-                            cat > Dockerfile << 'EOF'
-FROM openjdk:17-jre-slim
-
-WORKDIR /app
-
-# Copy the jar file
-COPY target/*.jar app.jar
-
-# Expose port (adjust as needed)
-EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/actuator/health || exit 1
-
-# Run the application
-ENTRYPOINT ["java", "-jar", "app.jar"]
-EOF
-                        fi
                         
                         # Build the Docker image
                         docker build -t ${DOCKER_IMAGE} .
