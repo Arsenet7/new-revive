@@ -48,7 +48,7 @@ pipeline {
                     sh '''
                         echo "Updating applications to remove problematic values file reference..."
                         
-                        # Update UI application
+                        # Update UI application if it exists
                         if argocd app list | grep -E "(^|/)ui($|[[:space:]])"; then
                             echo "Updating UI application..."
                             argocd app set argocd-s6arsene/ui \
@@ -57,9 +57,11 @@ pipeline {
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
                                 --project default || echo "Could not update UI app"
+                        else
+                            echo "UI application not found"
                         fi
                         
-                        # Update Catalog application  
+                        # Update Catalog application if it exists
                         if argocd app list | grep -E "(^|/)catalog($|[[:space:]])"; then
                             echo "Updating Catalog application..."
                             argocd app set argocd-s6arsene/catalog \
@@ -68,9 +70,17 @@ pipeline {
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
                                 --project default || echo "Could not update Catalog app"
+                        else
+                            echo "Catalog application not found - will create it"
+                            argocd app create argocd-s6arsene/catalog \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/catalog \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default || echo "Could not create Catalog app"
                         fi
                         
-                        # Update Assets application
+                        # Update Assets application if it exists
                         if argocd app list | grep -E "(^|/)assets($|[[:space:]])"; then
                             echo "Updating Assets application..."
                             argocd app set argocd-s6arsene/assets \
@@ -79,9 +89,11 @@ pipeline {
                                 --dest-server https://kubernetes.default.svc \
                                 --dest-namespace $TARGET_NAMESPACE \
                                 --project default || echo "Could not update Assets app"
+                        else
+                            echo "Assets application not found"
                         fi
                         
-                        echo "✓ All applications updated"
+                        echo "✓ All applications processed"
                     '''
                 }
             }
@@ -91,13 +103,20 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        echo "Enabling auto-sync for all applications..."
+                        echo "Enabling auto-sync for existing applications..."
                         
-                        for app in "argocd-s6arsene/ui" "argocd-s6arsene/catalog" "argocd-s6arsene/assets"; do
-                            echo "Enabling auto-sync for $app..."
-                            argocd app set $app --sync-policy automated --auto-prune --self-heal || echo "Could not enable auto-sync for $app"
-                            sleep 2
-                        done
+                        # Get list of existing applications
+                        EXISTING_APPS=$(argocd app list --output name | grep -E "(ui|catalog|assets)" || echo "")
+                        
+                        if [ -z "$EXISTING_APPS" ]; then
+                            echo "No target applications found"
+                        else
+                            for app in $EXISTING_APPS; do
+                                echo "Enabling auto-sync for $app..."
+                                argocd app set $app --sync-policy automated --auto-prune --self-heal || echo "Could not enable auto-sync for $app (may be permission issue)"
+                                sleep 2
+                            done
+                        fi
                     '''
                 }
             }
