@@ -17,7 +17,7 @@ pipeline {
         SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-ars-id')
         DOCKERHUB_USERNAME = 'arsenet10'
-        DOCKER_IMAGE_ASSET = "${DOCKERHUB_USERNAME}/new-revive"
+        DOCKER_IMAGE_ASSET = "${DOCKERHUB_USERNAME}/revive-assets"
         BUILD_VERSION = "${env.BUILD_NUMBER}"
         HELM_CHART_PATH = 'helm-revive/assets'
     }
