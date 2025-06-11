@@ -30,8 +30,8 @@ image:
   repository: arsenet10/revive-catalog
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "29"
-  tagdb: "29"
+  tag: "31"
+  tagdb: "db-31"
 
 imagePullSecrets: []
 nameOverride: ""
