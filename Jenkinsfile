@@ -17,8 +17,8 @@ pipeline {
         SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
         SONAR_SCANNER_VERSION = '5.0.1.3006'
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-ars-id')
-        DOCKER_IMAGE_CATALOG = 'arsenet10/new-revive-catalog'
-        DOCKER_IMAGE_DB = 'arsenet10/new-revive-catalog-db'
+        DOCKER_IMAGE_CATALOG = 'arsenet10/revive-catalog'
+        DOCKER_IMAGE_DB = 'arsenet10/revive-catalog'
         BUILD_VERSION = "${env.BUILD_NUMBER}"
         HELM_CHART_PATH = 'helm-revive/catalog'
     }
@@ -106,7 +106,7 @@ pipeline {
                         
                         // Build and push db image
                         dir('new-revive-catalog/catalog') {
-                            def dbImage = docker.build("${DOCKER_IMAGE_DB}:${BUILD_VERSION}", "-f Dockerfile-db .")
+                            def dbImage = docker.build("${DOCKER_IMAGE_DB}:db-${BUILD_VERSION}", "-f Dockerfile-db .")
                             dbImage.push()
                             dbImage.push('latest')
                         }
@@ -144,8 +144,8 @@ pipeline {
                             sed -i '/catalog:/,/tag:/ s/tag: .*/tag: "${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml || true
                             
                             # Update database image tag (using tagdb key)
-                            sed -i '/database:/,/tagdb:/ s/tagdb: .*/tagdb: "${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml || true
-                            sed -i 's/tagdb: .*/tagdb: "${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml || true
+                            sed -i '/database:/,/tagdb:/ s/tagdb: .*/tagdb: "db-${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml || true
+                            sed -i 's/tagdb: .*/tagdb: "db-${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml || true
                             
                             # Update catalog tag (general fallback)
                             sed -i 's/tag: .*/tag: "${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml
