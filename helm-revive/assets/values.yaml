@@ -8,7 +8,7 @@ image:
   repository: arsenet10/revive-assets
   pullPolicy: Always
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "22"
+  tag: "23"
 
 imagePullSecrets: []
 nameOverride: ""
