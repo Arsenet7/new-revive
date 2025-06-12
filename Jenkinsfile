@@ -90,7 +90,13 @@ pipeline {
                                 --dest-namespace $TARGET_NAMESPACE \
                                 --project default || echo "Could not update Assets app"
                         else
-                            echo "Assets application not found"
+                            echo "Assets application not found - will create it"
+                            argocd app create argocd-s6arsene/assets \
+                                --repo $GITHUB_REPO \
+                                --path helm-revive/assets \
+                                --dest-server https://kubernetes.default.svc \
+                                --dest-namespace $TARGET_NAMESPACE \
+                                --project default || echo "Could not create assets app"
                         fi
                         
                         echo "✓ All applications processed"
