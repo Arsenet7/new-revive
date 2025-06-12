@@ -1,344 +1,285 @@
 pipeline {
-    agent any
-    
+    agent {
+        label 'new-revive-agent'
+    }
+
+    parameters {
+        booleanParam(name: 'SKIP_SONAR', defaultValue: false, description: 'Skip SonarQube analysis and quality gate check')
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timeout(time: 2, unit: 'HOURS')
+        timestamps()
+    }
+
     environment {
-        ARGOCD_SERVER = '134.122.119.201:32129'
-        ARGOCD_CREDS = credentials('argocd-credential')
-        GITHUB_REPO = 'https://github.com/Arsenet7/new-revive.git'
-        TARGET_NAMESPACE = 's6arsene'
+        SCANNER_HOME = tool 'sonar' // Define the SonarQube scanner tool
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-ars-id')
+        DOCKERHUB_USERNAME = 'arsenet10'
+        DOCKER_IMAGE_ASSET = "${DOCKERHUB_USERNAME}/revive-assets"
+        BUILD_VERSION = "${env.BUILD_NUMBER}"
+        HELM_CHART_PATH = 'helm-revive/assets'
     }
-    
+
     stages {
-        stage('Install ArgoCD CLI') {
+        stage('Checkout') {
             steps {
+                cleanWs()
+                checkout([
+                    $class: 'GitSCM', 
+                    branches: [[name: 'asset']], 
+                    doGenerateSubmoduleConfigurations: false, 
+                    extensions: [], 
+                    submoduleCfg: [], 
+                    userRemoteConfigs: [[
+                        credentialsId: 'new-revive-ssh-key',
+                        url: 'https://github.com/Arsenet7/new-revive.git'
+                    ]]
+                ])
+                
+                // List workspace contents to debug
+                sh 'ls -la'
+            }
+        }
+
+        stage('Build and Prepare Assets') {
+            steps {
+                echo 'Building the application...'
+                
+                // Find all asset or assets directories
+                sh 'find . -type d -name "asset*" -ls'
+                
+                // Find all files in the repository
+                sh 'find . -type f -not -path "*/\\.*" | sort'
+                
+                echo 'Processing Nginx configuration...'
                 script {
-                    sh '''
-                        if ! command -v argocd &> /dev/null; then
-                            echo "Installing ArgoCD CLI..."
-                            curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-                            chmod +x argocd
-                            sudo mv argocd /usr/local/bin/argocd
-                        fi
-                        argocd version --client
-                    '''
+                    def nginxConfPath = sh(script: 'find . -name "nginx.conf" | head -1', returnStdout: true).trim()
+                    
+                    if (nginxConfPath) {
+                        echo "Found nginx.conf at: ${nginxConfPath}"
+                        
+                        // Create a directory to store configuration files
+                        sh 'mkdir -p config_files'
+                        
+                        // Copy nginx.conf to the config_files directory
+                        sh "cp ${nginxConfPath} config_files/"
+                        
+                        // Just to verify the content
+                        sh "cat ${nginxConfPath}"
+                        
+                        echo "Nginx configuration file processed and stored in config_files directory"
+                    } else {
+                        error "nginx.conf not found in the workspace"
+                    }
+                }
+                
+                echo 'Preparing deployment assets...'
+                script {
+                    // First try to find the assets directory (with 's')
+                    def assetDirPath = sh(script: 'find . -type d -name "assets" | head -1', returnStdout: true).trim()
+                    
+                    // If not found, try the asset directory (without 's')
+                    if (!assetDirPath) {
+                        assetDirPath = sh(script: 'find . -type d -name "asset" | head -1', returnStdout: true).trim()
+                    }
+                    
+                    if (assetDirPath) {
+                        echo "Found assets directory at: ${assetDirPath}"
+                        
+                        // Create a directory to store application files
+                        sh 'mkdir -p deployment/app'
+                        
+                        // Copy application files to the deployment directory
+                        sh "cp -r ${assetDirPath}/* deployment/app/ || echo 'Copy may have failed if directory is empty'"
+                        
+                        // List files in the deployment directory
+                        sh 'ls -la deployment/app/'
+                        
+                        echo "Application files prepared for deployment in deployment/app directory"
+                    } else {
+                        echo "Warning: Asset directory not found, continuing anyway..."
+                    }
                 }
             }
         }
-        
-        stage('Login to ArgoCD') {
+
+        stage('SonarQube Analysis') {
+            when {
+                expression { return !params.SKIP_SONAR }
+            }
             steps {
-                script {
-                    sh '''
-                        echo "Logging into ArgoCD..."
-                        argocd login $ARGOCD_SERVER \
-                            --username $ARGOCD_CREDS_USR \
-                            --password $ARGOCD_CREDS_PSW \
-                            --insecure
-                        
-                        echo "Current applications:"
-                        argocd app list
-                    '''
+                echo 'Running SonarQube analysis...'
+                
+                withSonarQubeEnv('sonar') {
+                    withCredentials([string(credentialsId: 'sonarqube-jenkins-id', variable: 'SONAR_TOKEN')]) {
+                        script {
+                            // Run SonarQube scanner
+                            sh '''
+                                ${SCANNER_HOME}/bin/sonar-scanner \
+                                    -Dsonar.token=${SONAR_TOKEN} \
+                                    -Dsonar.projectKey=new-revive-asset \
+                                    -Dsonar.projectName="New Revive Asset" \
+                                    -Dsonar.projectVersion=${BUILD_VERSION} \
+                                    -Dsonar.sources=. \
+                                    -Dsonar.exclusions="**/node_modules/**,**/target/**,**/build/**" \
+                                    -Dsonar.coverage.exclusions="**/test/**,**/tests/**"
+                            '''
+                        }
+                    }
                 }
             }
         }
-        
-        stage('Update Applications') {
+
+        stage("Quality Gate") {
+            when {
+                expression { return !params.SKIP_SONAR }
+            }
             steps {
-                script {
-                    sh '''
-                        echo "Updating applications..."
-                        
-                        # Track operations
-                        SUCCESS_COUNT=0
-                        SKIP_COUNT=0
-                        
-                        # Update UI application if it exists
-                        if argocd app list | grep -E "(^|/)ui($|[[:space:]])"; then
-                            echo "Updating UI application..."
-                            if argocd app set argocd-s6arsene/ui \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/ui \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default 2>/dev/null; then
-                                echo "✅ UI application updated successfully"
-                                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                            else
-                                echo "⚠️ Could not update UI app (permission issue)"
-                                SKIP_COUNT=$((SKIP_COUNT + 1))
-                            fi
-                        else
-                            echo "UI application not found"
-                        fi
-                        
-                        # Update Catalog application
-                        if argocd app list | grep -E "(^|/)catalog($|[[:space:]])"; then
-                            echo "Updating Catalog application..."
-                            if argocd app set argocd-s6arsene/catalog \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/catalog \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default 2>/dev/null; then
-                                echo "✅ Catalog application updated successfully"
-                                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                            else
-                                echo "⚠️ Could not update Catalog app (permission issue)"
-                                SKIP_COUNT=$((SKIP_COUNT + 1))
-                            fi
-                        else
-                            echo "Catalog application not found - attempting to create..."
-                            if argocd app create argocd-s6arsene/catalog \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/catalog \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default 2>/dev/null; then
-                                echo "✅ Catalog application created successfully"
-                                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                            else
-                                echo "⚠️ Could not create Catalog app (permission issue)"
-                                SKIP_COUNT=$((SKIP_COUNT + 1))
-                            fi
-                        fi
-                        
-                        # Update Assets application
-                        if argocd app list | grep -E "(^|/)assets($|[[:space:]])"; then
-                            echo "Updating Assets application..."
-                            if argocd app set argocd-s6arsene/assets \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/assets \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default 2>/dev/null; then
-                                echo "✅ Assets application updated successfully"
-                                SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                            else
-                                echo "⚠️ Could not update Assets app (permission issue)"
-                                SKIP_COUNT=$((SKIP_COUNT + 1))
-                            fi
-                        else
-                            echo "Assets application not found"
-                        fi
-                        
-                        echo ""
-                        echo "=== Update Summary ==="
-                        echo "✅ Successful updates: $SUCCESS_COUNT"
-                        echo "⚠️ Skipped (permissions): $SKIP_COUNT"
-                        echo "✅ Update stage completed"
-                    '''
+                echo 'Checking SonarQube Quality Gate...'
+                
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
-        
-        stage('Enable Auto Sync') {
+
+        stage('Build and Push Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                
+                script {
+                    // Find the Dockerfile
+                    def dockerfilePath = sh(script: 'find . -name "Dockerfile" | head -1', returnStdout: true).trim()
+                    
+                    if (dockerfilePath) {
+                        echo "Found Dockerfile at: ${dockerfilePath}"
+                        
+                        // Get the directory containing the Dockerfile
+                        def dockerfileDir = sh(script: "dirname ${dockerfilePath}", returnStdout: true).trim()
+                        
+                        // Use Docker registry method for consistency with catalog pipeline
+                        docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-ars-id') {
+                            def assetImage = docker.build("${DOCKER_IMAGE_ASSET}:${BUILD_VERSION}", "-f ${dockerfilePath} ${dockerfileDir}")
+                            assetImage.push()
+                            assetImage.push('latest')
+                        }
+                        
+                        echo "Docker image built and pushed successfully"
+                    } else {
+                        error "Dockerfile not found in the workspace"
+                    }
+                }
+            }
+        }
+
+        stage('Update Helm Chart') {
             steps {
                 script {
-                    sh '''
-                        echo "Enabling auto-sync for applications..."
-                        
-                        # Get list of existing applications
-                        EXISTING_APPS=$(argocd app list --output name | grep -E "(ui|catalog|assets)" 2>/dev/null || echo "")
-                        
-                        if [ -z "$EXISTING_APPS" ]; then
-                            echo "No target applications found"
-                        else
-                            SUCCESS_COUNT=0
-                            SKIP_COUNT=0
+                    checkout([
+                        $class: 'GitSCM', 
+                        branches: [[name: 'main']], 
+                        doGenerateSubmoduleConfigurations: false, 
+                        extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'helm-repo']], 
+                        submoduleCfg: [], 
+                        userRemoteConfigs: [[
+                            credentialsId: 'github-token-id',
+                            url: 'https://github.com/Arsenet7/new-revive.git'
+                        ]]
+                    ])
+
+                    dir('helm-repo') {
+                        sh '''
+                            git config user.name "Jenkins CI"
+                            git config user.email "jenkins@company.com"
                             
-                            for app in $EXISTING_APPS; do
-                                echo "Enabling auto-sync for $app..."
-                                if argocd app set $app --sync-policy automated --auto-prune --self-heal 2>/dev/null; then
-                                    echo "✅ Auto-sync enabled for $app"
-                                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                                else
-                                    echo "⚠️ Could not enable auto-sync for $app (permission issue)"
-                                    SKIP_COUNT=$((SKIP_COUNT + 1))
-                                fi
-                                sleep 1
-                            done
+                            # Create and switch to main branch to avoid detached HEAD
+                            git checkout -B main origin/main
+                        '''
+
+                        sh """
+                            # Update asset image tag
+                            sed -i '/asset:/,/tag:/ s/tag: .*/tag: "${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml || true
                             
-                            echo ""
-                            echo "=== Auto-sync Summary ==="
-                            echo "✅ Successful: $SUCCESS_COUNT"
-                            echo "⚠️ Skipped: $SKIP_COUNT"
-                        fi
-                        echo "✅ Auto-sync stage completed"
-                    '''
-                }
-            }
-        }
-        
-        stage('Sync Applications') {
-            steps {
-                script {
-                    sh '''
-                        echo "Syncing applications..."
-                        
-                        # Get list of existing applications
-                        EXISTING_APPS=$(argocd app list --output name | grep -E "(ui|catalog|assets)" 2>/dev/null || echo "")
-                        
-                        if [ -z "$EXISTING_APPS" ]; then
-                            echo "No target applications found to sync"
-                        else
-                            SUCCESS_COUNT=0
-                            PERMISSION_DENIED_COUNT=0
-                            ERROR_COUNT=0
+                            # General tag replacement fallback
+                            sed -i 's/tag: .*/tag: "${BUILD_VERSION}"/' ${HELM_CHART_PATH}/values.yaml
                             
-                            for app in $EXISTING_APPS; do
-                                echo "Syncing $app..."
-                                
-                                # Try normal sync first
-                                if argocd app sync $app --timeout 180 2>/dev/null; then
-                                    echo "✅ Successfully synced $app"
-                                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                                # Try force sync
-                                elif argocd app sync $app --force --timeout 180 2>/dev/null; then
-                                    echo "✅ Force synced $app successfully"
-                                    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-                                else
-                                    # Check for permission error
-                                    SYNC_ERROR=$(argocd app sync $app --timeout 10 2>&1 || echo "error")
-                                    if echo "$SYNC_ERROR" | grep -q "permission denied"; then
-                                        echo "🔒 Permission denied for $app (RBAC issue - app may still work)"
-                                        PERMISSION_DENIED_COUNT=$((PERMISSION_DENIED_COUNT + 1))
+                            echo "Updated Helm chart values.yaml with image tag: ${BUILD_VERSION}"
+                            echo "=== Updated values.yaml content ==="
+                            cat ${HELM_CHART_PATH}/values.yaml | grep -A2 -B2 "tag:"
+                        """
+
+                        script {
+                            // Use GitHub token for authentication
+                            withCredentials([usernamePassword(credentialsId: 'github-token-id', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_TOKEN')]) {
+                                sh """
+                                    # Configure Git to use the token for authentication
+                                    git remote set-url origin https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/Arsenet7/new-revive.git
+                                    
+                                    git add ${HELM_CHART_PATH}/values.yaml
+                                    
+                                    # Check if there are changes to commit
+                                    if git diff --staged --quiet; then
+                                        echo "No changes to commit - image tag is already up to date"
                                     else
-                                        echo "❌ Sync failed for $app"
-                                        ERROR_COUNT=$((ERROR_COUNT + 1))
+                                        git commit -m "Update asset image tag to ${BUILD_VERSION} - Build ${BUILD_NUMBER}
+
+- Asset image: ${DOCKER_IMAGE_ASSET}:${BUILD_VERSION}
+
+Updated by Jenkins build #${BUILD_NUMBER}"
+                                        echo "Pushing changes to repository..."
+                                        git push origin main
+                                        echo "Successfully updated Helm chart with image tag ${BUILD_VERSION}"
                                     fi
-                                fi
-                                
-                                sleep 3
-                            done
-                            
-                            echo ""
-                            echo "=== Sync Summary ==="
-                            echo "✅ Successfully synced: $SUCCESS_COUNT"
-                            echo "🔒 Permission denied: $PERMISSION_DENIED_COUNT"
-                            echo "❌ Other errors: $ERROR_COUNT"
-                            
-                            # Consider it successful if at least some apps synced
-                            if [ $SUCCESS_COUNT -gt 0 ]; then
-                                echo "✅ Sync stage completed with partial success"
-                            elif [ $PERMISSION_DENIED_COUNT -gt 0 ]; then
-                                echo "⚠️ Sync stage completed (permission issues only)"
-                            else
-                                echo "⚠️ Sync stage completed with issues"
-                            fi
-                        fi
-                    '''
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+            post {
+                failure {
+                    echo "Failed to update Helm chart. Please check Git credentials and repository permissions."
                 }
             }
         }
-        
-        stage('Final Status Report') {
+
+        stage('Archive Artifacts') {
             steps {
-                script {
-                    sh '''
-                        echo "=== FINAL DEPLOYMENT REPORT ==="
-                        argocd app list 2>/dev/null || echo "Could not list applications"
-                        
-                        echo ""
-                        echo "=== APPLICATION HEALTH CHECK ==="
-                        
-                        # Get existing applications
-                        EXISTING_APPS=$(argocd app list --output name | grep -E "(ui|catalog|assets)" 2>/dev/null || echo "")
-                        
-                        if [ -z "$EXISTING_APPS" ]; then
-                            echo "No target applications found"
-                        else
-                            HEALTHY_COUNT=0
-                            DEGRADED_COUNT=0
-                            PERMISSION_DENIED_COUNT=0
-                            UNKNOWN_COUNT=0
-                            TOTAL_COUNT=0
-                            
-                            for app in $EXISTING_APPS; do
-                                TOTAL_COUNT=$((TOTAL_COUNT + 1))
-                                echo "Checking $app..."
-                                
-                                # Try to get app status
-                                APP_STATUS=$(argocd app get $app 2>&1 || echo "permission_denied")
-                                
-                                if echo "$APP_STATUS" | grep -q "permission denied"; then
-                                    echo "  🔒 Permission denied (RBAC issue)"
-                                    PERMISSION_DENIED_COUNT=$((PERMISSION_DENIED_COUNT + 1))
-                                elif echo "$APP_STATUS" | grep -q "Health Status:.*Healthy"; then
-                                    echo "  ✅ HEALTHY"
-                                    HEALTHY_COUNT=$((HEALTHY_COUNT + 1))
-                                elif echo "$APP_STATUS" | grep -q "Health Status:.*Degraded"; then
-                                    echo "  ⚠️ DEGRADED"
-                                    DEGRADED_COUNT=$((DEGRADED_COUNT + 1))
-                                elif echo "$APP_STATUS" | grep -q "Health Status:.*Progressing"; then
-                                    echo "  🔄 PROGRESSING"
-                                else
-                                    echo "  ❓ Unknown status"
-                                    UNKNOWN_COUNT=$((UNKNOWN_COUNT + 1))
-                                fi
-                            done
-                            
-                            echo ""
-                            echo "=== FINAL SUMMARY ==="
-                            echo "📊 Total applications: $TOTAL_COUNT"
-                            echo "✅ Healthy: $HEALTHY_COUNT"
-                            echo "⚠️ Degraded: $DEGRADED_COUNT"
-                            echo "🔒 Permission denied: $PERMISSION_DENIED_COUNT"
-                            echo "❓ Unknown: $UNKNOWN_COUNT"
-                            
-                            ACCESSIBLE_COUNT=$((TOTAL_COUNT - PERMISSION_DENIED_COUNT))
-                            
-                            if [ $ACCESSIBLE_COUNT -eq 0 ]; then
-                                echo ""
-                                echo "🔒 All applications have permission issues - check ArgoCD UI"
-                            elif [ $HEALTHY_COUNT -eq $ACCESSIBLE_COUNT ] && [ $ACCESSIBLE_COUNT -gt 0 ]; then
-                                echo ""
-                                echo "🎉 ALL ACCESSIBLE APPLICATIONS ARE HEALTHY!"
-                            elif [ $HEALTHY_COUNT -gt 0 ]; then
-                                echo ""
-                                echo "✅ Some applications are healthy"
-                            fi
-                        fi
-                        
-                        echo ""
-                        echo "=== IMPORTANT NOTES ==="
-                        echo "🔒 Permission denied errors are ArgoCD RBAC restrictions"
-                        echo "   Applications may still be working normally in the UI"
-                        echo "✅ Check ArgoCD UI: http://134.122.119.201:32129"
-                        echo "🚀 Auto-sync is enabled - changes will deploy automatically"
-                        
-                        # Always exit successfully
-                        echo ""
-                        echo "✅ Pipeline completed successfully!"
-                        exit 0
-                    '''
-                }
+                echo 'Archiving artifacts...'
+                
+                // Archive the config_files and deployment directories as artifacts
+                archiveArtifacts artifacts: 'config_files/**/*,deployment/**/*', allowEmptyArchive: true
+                
+                echo "Artifacts archived successfully"
             }
         }
     }
-    
+
     post {
-        always {
-            script {
-                sh 'argocd logout $ARGOCD_SERVER 2>/dev/null || true'
-            }
-        }
         success {
-            echo "🎉 ArgoCD Pipeline completed successfully!"
-            echo ""
-            echo "✅ What was accomplished:"
-            echo "  - Connected to ArgoCD server"
-            echo "  - Updated application configurations"
-            echo "  - Enabled auto-sync where possible"
-            echo "  - Synced applications where permitted"
-            echo ""
-            echo "🔗 Next steps:"
-            echo "  - Check ArgoCD UI: http://134.122.119.201:32129"
-            echo "  - Verify application health and sync status"
-            echo "  - Applications will auto-deploy on repository changes"
+            echo 'Build, SonarQube analysis, Docker image push, and Helm chart update completed successfully!'
+            echo "Docker image available at: ${DOCKER_IMAGE_ASSET}:${BUILD_VERSION}"
         }
         failure {
-            echo "⚠️ Pipeline encountered issues but applications may still be working"
-            echo "Check the ArgoCD UI: http://134.122.119.201:32129"
+            echo 'Build, SonarQube analysis, Docker image push, or Helm chart update failed!'
+            
+            // Archive any available logs or output
+            script {
+                sh 'find . -name "*.log" -o -name "*.out" | xargs tar -czf logs.tar.gz || echo "No logs found"'
+                archiveArtifacts artifacts: 'logs.tar.gz', allowEmptyArchive: true
+            }
+        }
+        always {
+            // Clean up local images
+            script {
+                sh """
+                    docker rmi ${DOCKER_IMAGE_ASSET}:${BUILD_VERSION} || true
+                    docker rmi ${DOCKER_IMAGE_ASSET}:latest || true
+                """
+            }
+            cleanWs()
         }
     }
 }
