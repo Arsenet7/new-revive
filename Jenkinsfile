@@ -450,7 +450,7 @@ EOF
             echo "Please check the logs and ArgoCD UI for details"
             
             //  Send failure notification (if configured)
-            // slackSend color: 'danger', message: "❌ Production deployment failed: ${params.APPLICATION} → ${params.ENVIRONMENT}"
+            // Send color: 'danger', message: "❌ Production deployment failed: ${params.APPLICATION} → ${params.ENVIRONMENT}"
         }
     }
 }
