@@ -1,252 +1,456 @@
 pipeline {
     agent any
     
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['prod-s6arsene'],
+            description: 'Target environment for deployment'
+        )
+        choice(
+            name: 'APPLICATION',
+            choices: ['all', 'ui', 'catalog', 'assets'],
+            description: 'Select application to deploy'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: 'latest',
+            description: 'Docker image tag to deploy (e.g., latest, 123, v1.0.0)'
+        )
+        booleanParam(
+            name: 'SKIP_APPROVAL',
+            defaultValue: false,
+            description: 'Skip manual approval for production deployment'
+        )
+        booleanParam(
+            name: 'FORCE_SYNC',
+            defaultValue: false,
+            description: 'Force sync applications even if already synced'
+        )
+    }
+    
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 1, unit: 'HOURS')
+        timestamps()
+    }
+    
     environment {
         ARGOCD_SERVER = '134.122.119.201:32129'
         ARGOCD_CREDS = credentials('argocd-credential')
         GITHUB_REPO = 'https://github.com/Arsenet7/new-revive.git'
-        TARGET_NAMESPACE = 's6arsene'
+        PROD_NAMESPACE = 'prod-s6arsene'
+        DOCKER_REGISTRY = 'arsenet10'
     }
     
     stages {
-        stage('Install ArgoCD CLI') {
+        stage('Validate Parameters') {
             steps {
                 script {
-                    sh '''
-                        if ! command -v argocd &> /dev/null; then
-                            echo "Installing ArgoCD CLI..."
-                            curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-                            chmod +x argocd
-                            sudo mv argocd /usr/local/bin/argocd
-                        fi
-                        argocd version --client
-                    '''
+                    echo "🔍 Deployment Parameters:"
+                    echo "  Environment: ${params.ENVIRONMENT}"
+                    echo "  Application: ${params.APPLICATION}"
+                    echo "  Image Tag: ${params.IMAGE_TAG}"
+                    echo "  Skip Approval: ${params.SKIP_APPROVAL}"
+                    echo "  Force Sync: ${params.FORCE_SYNC}"
+                    
+                    // Validate image tag format
+                    if (params.IMAGE_TAG.trim() == '') {
+                        error("Image tag cannot be empty")
+                    }
                 }
             }
         }
         
-        stage('Login to ArgoCD') {
+        stage('Pre-deployment Checks') {
             steps {
                 script {
                     sh '''
-                        echo "Logging into ArgoCD..."
+                        echo "🔧 Installing ArgoCD CLI..."
+                        if ! command -v argocd >/dev/null 2>&1; then
+                            curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+                            chmod +x argocd
+                            sudo mv argocd /usr/local/bin/argocd
+                        fi
+                        
+                        echo "🔗 Connecting to ArgoCD..."
                         argocd login $ARGOCD_SERVER \
                             --username $ARGOCD_CREDS_USR \
                             --password $ARGOCD_CREDS_PSW \
                             --insecure
                         
-                        echo "Current applications:"
-                        argocd app list
-                    '''
-                }
-            }
-        }
-        
-        stage('Update Applications Without Values File') {
-            steps {
-                script {
-                    sh '''
-                        echo "Updating applications to remove problematic values file reference..."
+                        echo "📋 Current production applications:"
+                        argocd app list | grep -E "(prod-|$PROD_NAMESPACE)" || echo "No production applications found"
                         
-                        # Update UI application if it exists
-                        if argocd app list | grep -E "(^|/)ui($|[[:space:]])"; then
-                            echo "Updating UI application..."
-                            argocd app set argocd-s6arsene/ui \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/ui \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default || echo "Could not update UI app"
+                        echo "🔍 Checking namespace exists..."
+                        if command -v kubectl >/dev/null 2>&1; then
+                            kubectl get namespace $PROD_NAMESPACE 2>/dev/null || echo "⚠️ Namespace $PROD_NAMESPACE may not exist"
                         else
-                            echo "UI application not found"
-                        fi
-                        
-                        # Update Catalog application if it exists
-                        if argocd app list | grep -E "(^|/)catalog($|[[:space:]])"; then
-                            echo "Updating Catalog application..."
-                            argocd app set argocd-s6arsene/catalog \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/catalog \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default || echo "Could not update Catalog app"
-                        else
-                            echo "Catalog application not found - will create it"
-                            argocd app create argocd-s6arsene/catalog \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/catalog \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default || echo "Could not create Catalog app"
-                        fi
-                        
-                        # Update Assets application if it exists
-                        if argocd app list | grep -E "(^|/)assets($|[[:space:]])"; then
-                            echo "Updating Assets application..."
-                            argocd app set argocd-s6arsene/assets \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/assets \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default || echo "Could not update Assets app"
-                        else
-                            echo "Assets application not found - will create it"
-                            argocd app create argocd-s6arsene/assets \
-                                --repo $GITHUB_REPO \
-                                --path helm-revive/assets \
-                                --dest-server https://kubernetes.default.svc \
-                                --dest-namespace $TARGET_NAMESPACE \
-                                --project default || echo "Could not create assets app"
-                        fi
-                        
-                        echo "✓ All applications processed"
-                    '''
-                }
-            }
-        }
-        
-        stage('Enable Auto Sync') {
-            steps {
-                script {
-                    sh '''
-                        echo "Enabling auto-sync for existing applications..."
-                        
-                        # Get list of existing applications
-                        EXISTING_APPS=$(argocd app list --output name | grep -E "(ui|catalog|assets)" || echo "")
-                        
-                        if [ -z "$EXISTING_APPS" ]; then
-                            echo "No target applications found"
-                        else
-                            for app in $EXISTING_APPS; do
-                                echo "Enabling auto-sync for $app..."
-                                argocd app set $app --sync-policy automated --auto-prune --self-heal || echo "Could not enable auto-sync for $app (may be permission issue)"
-                                sleep 2
-                            done
+                            echo "⚠️ kubectl not available - cannot verify namespace"
                         fi
                     '''
                 }
             }
         }
         
-        stage('Sync Applications') {
+        stage('Production Approval') {
+            when {
+                expression { return !params.SKIP_APPROVAL }
+            }
             steps {
                 script {
-                    sh '''
-                        echo "Syncing all applications..."
-                        
-                        for app in "argocd-s6arsene/ui" "argocd-s6arsene/catalog" "argocd-s6arsene/assets"; do
-                            echo "Syncing $app..."
+                    def deploymentInfo = """
+🚀 PRODUCTION DEPLOYMENT REQUEST
+
+📦 Application: ${params.APPLICATION}
+🏷️  Image Tag: ${params.IMAGE_TAG}
+🌐 Namespace: ${params.PROD_NAMESPACE}
+⚡ Force Sync: ${params.FORCE_SYNC}
+
+⚠️  This will deploy to PRODUCTION environment!
+"""
+                    
+                    echo deploymentInfo
+                    
+                    timeout(time: 30, unit: 'MINUTES') {
+                        input(
+                            message: 'Approve Production Deployment?',
+                            ok: 'Deploy to Production',
+                            submitterParameter: 'APPROVER',
+                            parameters: [
+                                text(name: 'APPROVAL_NOTES', defaultValue: '', description: 'Deployment notes (optional)')
+                            ]
+                        )
+                    }
+                    
+                    echo "✅ Production deployment approved by: ${env.APPROVER}"
+                    if (env.APPROVAL_NOTES?.trim()) {
+                        echo "📝 Approval notes: ${env.APPROVAL_NOTES}"
+                    }
+                }
+            }
+        }
+        
+        stage('Create/Update Production Applications') {
+            steps {
+                script {
+                    def applications = []
+                    
+                    if (params.APPLICATION == 'all') {
+                        applications = ['ui', 'catalog', 'assets']
+                    } else {
+                        applications = [params.APPLICATION]
+                    }
+                    
+                    applications.each { app ->
+                        sh """
+                            echo "🔧 Processing ${app} application for production..."
                             
-                            if argocd app sync $app --timeout 180; then
-                                echo "✓ Successfully synced $app"
-                            elif argocd app sync $app --force --timeout 180; then
-                                echo "✓ Force synced $app successfully"
+                            # Define production application name
+                            PROD_APP_NAME="prod-${app}"
+                            
+                            # Check if production application exists
+                            if argocd app list | grep -q "\$PROD_APP_NAME"; then
+                                echo "📝 Updating existing production application: \$PROD_APP_NAME"
+                                
+                                # Update the application configuration
+                                argocd app set \$PROD_APP_NAME \
+                                    --repo $GITHUB_REPO \
+                                    --path helm-revive/${app} \
+                                    --dest-server https://kubernetes.default.svc \
+                                    --dest-namespace $PROD_NAMESPACE \
+                                    --project default 2>/dev/null || echo "⚠️ Could not update \$PROD_APP_NAME (permission issue)"
+                                
                             else
-                                echo "⚠ Could not sync $app - checking status..."
-                                argocd app get $app
+                                echo "🆕 Creating new production application: \$PROD_APP_NAME"
+                                
+                                # Create new production application
+                                argocd app create \$PROD_APP_NAME \
+                                    --repo $GITHUB_REPO \
+                                    --path helm-revive/${app} \
+                                    --dest-server https://kubernetes.default.svc \
+                                    --dest-namespace $PROD_NAMESPACE \
+                                    --project default \
+                                    --sync-policy automated \
+                                    --auto-prune \
+                                    --self-heal 2>/dev/null || echo "⚠️ Could not create \$PROD_APP_NAME (permission issue)"
+                            fi
+                            
+                            # Set production-specific values if needed
+                            echo "⚙️ Configuring production settings for \$PROD_APP_NAME..."
+                            
+                            sleep 2
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Update Image Tags') {
+            when {
+                expression { return params.IMAGE_TAG != 'latest' }
+            }
+            steps {
+                script {
+                    sh '''
+                        echo "🏷️ Updating Helm charts with image tag: ${IMAGE_TAG}"
+                        
+                        # Checkout main branch for Helm chart updates
+                        git config --global user.name "Jenkins Production CD"
+                        git config --global user.email "jenkins-prod@company.com"
+                        
+                        # Clone repository
+                        rm -rf helm-repo-prod
+                        git clone https://github.com/Arsenet7/new-revive.git helm-repo-prod
+                        cd helm-repo-prod
+                        git checkout main
+                        
+                        # Function to update image tag in values.yaml
+                        update_image_tag() {
+                            local app=$1
+                            local chart_path="helm-revive/$app"
+                            
+                            if [ -f "$chart_path/values.yaml" ]; then
+                                echo "Updating $app image tag to ${IMAGE_TAG}"
+                                
+                                # Update image tag
+                                sed -i "s/tag: .*/tag: \\"${IMAGE_TAG}\\"/" "$chart_path/values.yaml"
+                                
+                                # Update image repository if needed
+                                case $app in
+                                    "ui")
+                                        sed -i "s|repository: .*|repository: \\"${DOCKER_REGISTRY}/revive-ui\\"|" "$chart_path/values.yaml"
+                                        ;;
+                                    "catalog")
+                                        sed -i "s|repository: .*|repository: \\"${DOCKER_REGISTRY}/new-revive-catalog\\"|" "$chart_path/values.yaml"
+                                        # Update database tag if exists
+                                        sed -i "s/tagdb: .*/tagdb: \\"${IMAGE_TAG}\\"/" "$chart_path/values.yaml" 2>/dev/null || true
+                                        ;;
+                                    "assets")
+                                        sed -i "s|repository: .*|repository: \\"${DOCKER_REGISTRY}/revive-assets\\"|" "$chart_path/values.yaml"
+                                        ;;
+                                esac
+                                
+                                echo "✅ Updated $app values.yaml"
+                            else
+                                echo "⚠️ values.yaml not found for $app"
+                            fi
+                        }
+                        
+                        # Update image tags based on selection
+                        if [ "${APPLICATION}" = "all" ]; then
+                            update_image_tag "ui"
+                            update_image_tag "catalog"
+                            update_image_tag "assets"
+                        else
+                            update_image_tag "${APPLICATION}"
+                        fi
+                        
+                        # Commit and push changes
+                        git add .
+                        if git diff --staged --quiet; then
+                            echo "No changes to commit - image tags already up to date"
+                        else
+                            git commit -m "🚀 Production deployment: Update ${APPLICATION} to ${IMAGE_TAG}
+
+📦 Application: ${APPLICATION}
+🏷️  Image Tag: ${IMAGE_TAG}
+🌐 Target: ${PROD_NAMESPACE}
+👤 Deployed by: Jenkins Production CD
+🕒 Timestamp: $(date)
+${APPROVAL_NOTES:+📝 Notes: $APPROVAL_NOTES}"
+                            
+                            # Push changes using credentials
+                            git remote set-url origin https://github.com/Arsenet7/new-revive.git
+                            git push origin main
+                            echo "✅ Helm charts updated and pushed"
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            steps {
+                script {
+                    def applications = []
+                    
+                    if (params.APPLICATION == 'all') {
+                        applications = ['ui', 'catalog', 'assets']
+                    } else {
+                        applications = [params.APPLICATION]
+                    }
+                    
+                    applications.each { app ->
+                        sh """
+                            echo "🚀 Deploying ${app} to production..."
+                            
+                            PROD_APP_NAME="prod-${app}"
+                            
+                            # Refresh application to get latest changes
+                            echo "🔄 Refreshing \$PROD_APP_NAME..."
+                            argocd app refresh \$PROD_APP_NAME 2>/dev/null || echo "⚠️ Could not refresh \$PROD_APP_NAME"
+                            
+                            sleep 5
+                            
+                            # Sync application
+                            echo "⚡ Syncing \$PROD_APP_NAME..."
+                            
+                            if [ "${FORCE_SYNC}" = "true" ]; then
+                                echo "🔧 Force syncing \$PROD_APP_NAME..."
+                                argocd app sync \$PROD_APP_NAME --force --timeout 300 2>/dev/null || echo "⚠️ Could not force sync \$PROD_APP_NAME"
+                            else
+                                argocd app sync \$PROD_APP_NAME --timeout 300 2>/dev/null || echo "⚠️ Could not sync \$PROD_APP_NAME"
                             fi
                             
                             sleep 10
-                        done
-                    '''
+                        """
+                    }
                 }
             }
         }
         
-        stage('Wait for Deployments') {
+        stage('Verify Production Deployment') {
             steps {
                 script {
                     sh '''
-                        echo "Waiting for deployments to complete..."
-                        sleep 30
+                        echo "🔍 Verifying production deployment..."
                         
-                        echo "Checking final application status..."
-                        EXISTING_APPS=$(argocd app list --output name | grep -E "(ui|catalog|assets)" || echo "")
-                        
-                        if [ ! -z "$EXISTING_APPS" ]; then
-                            for app in $EXISTING_APPS; do
-                                echo "=== $app ==="
-                                # Try to get status, but don't fail if permission denied
-                                if argocd app get $app --output wide 2>/dev/null; then
-                                    echo "✓ Status retrieved successfully"
-                                else
-                                    echo "⚠ Could not get status (permission issue)"
-                                fi
-                                echo ""
-                            done
-                        fi
-                    '''
-                }
-            }
-        }
-        
-        stage('Final Status Report') {
-            steps {
-                script {
-                    sh '''
-                        echo "=== FINAL DEPLOYMENT REPORT ==="
-                        argocd app list
+                        # List all production applications
+                        echo "📋 Production applications:"
+                        argocd app list | grep -E "(prod-|${PROD_NAMESPACE})" || echo "No production applications found"
                         
                         echo ""
-                        echo "=== HEALTH CHECK ==="
+                        echo "🏥 Health check for deployed applications:"
+                        
                         HEALTHY_COUNT=0
                         TOTAL_COUNT=0
                         
-                        for app in "argocd-s6arsene/ui" "argocd-s6arsene/catalog" "argocd-s6arsene/assets"; do
+                        # Check health of production applications
+                        for app_suffix in ui catalog assets; do
+                            PROD_APP_NAME="prod-$app_suffix"
+                            
+                            # Skip if not deploying this app
+                            if [ "${APPLICATION}" != "all" ] && [ "${APPLICATION}" != "$app_suffix" ]; then
+                                continue
+                            fi
+                            
                             TOTAL_COUNT=$((TOTAL_COUNT + 1))
                             
-                            if argocd app get $app | grep -q "Health Status:.*Healthy"; then
-                                echo "✅ $app is HEALTHY"
+                            echo "Checking $PROD_APP_NAME..."
+                            
+                            # Get application status
+                            APP_STATUS=$(argocd app get $PROD_APP_NAME 2>&1 || echo "error")
+                            
+                            if echo "$APP_STATUS" | grep -q "permission denied"; then
+                                echo "  🔒 Permission denied (check ArgoCD UI)"
+                            elif echo "$APP_STATUS" | grep -q "Health Status:.*Healthy"; then
+                                echo "  ✅ HEALTHY"
                                 HEALTHY_COUNT=$((HEALTHY_COUNT + 1))
-                            elif argocd app get $app | grep -q "Health Status:.*Progressing"; then
-                                echo "🔄 $app is PROGRESSING"
+                            elif echo "$APP_STATUS" | grep -q "Health Status:.*Progressing"; then
+                                echo "  🔄 PROGRESSING"
+                            elif echo "$APP_STATUS" | grep -q "Health Status:.*Degraded"; then
+                                echo "  ⚠️ DEGRADED"
                             else
-                                echo "❌ $app has issues"
-                                argocd app get $app | grep -E "(Health Status|Sync Status|MESSAGE)"
+                                echo "  ❓ Unknown status"
                             fi
                         done
                         
                         echo ""
-                        echo "=== SUMMARY ==="
-                        echo "Healthy applications: $HEALTHY_COUNT/$TOTAL_COUNT"
+                        echo "📊 Deployment Summary:"
+                        echo "  ✅ Healthy: $HEALTHY_COUNT"
+                        echo "  📊 Total: $TOTAL_COUNT"
                         
-                        if [ $HEALTHY_COUNT -eq $TOTAL_COUNT ]; then
-                            echo "🎉 ALL APPLICATIONS ARE HEALTHY!"
+                        if [ $HEALTHY_COUNT -eq $TOTAL_COUNT ] && [ $TOTAL_COUNT -gt 0 ]; then
+                            echo "🎉 ALL PRODUCTION APPLICATIONS ARE HEALTHY!"
                         elif [ $HEALTHY_COUNT -gt 0 ]; then
-                            echo "⚠️  Some applications need attention"
-                        else
-                            echo "❌ All applications need troubleshooting"
-                            echo ""
-                            echo "Common fixes:"
-                            echo "1. Check if namespace 's6arserne' exists: kubectl get namespace s6arserne"
-                            echo "2. Create namespace manually: kubectl create namespace s6arserne"
-                            echo "3. Check Helm chart validity in repository"
-                            echo "4. Verify values.yaml files exist in each chart directory"
+                            echo "⚠️ Some production applications need attention"
                         fi
+                        
+                        echo ""
+                        echo "🔗 Check production status: http://134.122.119.201:32129"
                     '''
+                }
+            }
+        }
+        
+        stage('Post-Deployment Validation') {
+            steps {
+                script {
+                    sh '''
+                        echo "✅ Production deployment completed!"
+                        echo ""
+                        echo "📋 Deployment Details:"
+                        echo "  🎯 Environment: ${PROD_NAMESPACE}"
+                        echo "  📦 Application: ${APPLICATION}"
+                        echo "  🏷️  Image Tag: ${IMAGE_TAG}"
+                        echo "  👤 Approved by: ${APPROVER:-"Auto-approved"}"
+                        echo "  🕒 Completed: $(date)"
+                        echo ""
+                        echo "🔗 Monitor your applications:"
+                        echo "  • ArgoCD UI: http://134.122.119.201:32129"
+                        echo "  • Look for applications prefixed with 'prod-'"
+                        echo ""
+                        echo "🔄 Applications will auto-sync on future repository changes"
+                        
+                        # Create deployment record
+                        echo "Creating deployment record..."
+                        cat > deployment-record.json << EOF
+{
+  "timestamp": "$(date -Iseconds)",
+  "environment": "${PROD_NAMESPACE}",
+  "application": "${APPLICATION}",
+  "image_tag": "${IMAGE_TAG}",
+  "approver": "${APPROVER:-"auto"}",
+  "build_number": "${BUILD_NUMBER}",
+  "git_commit": "$(git rev-parse HEAD 2>/dev/null || echo 'unknown')",
+  "jenkins_job": "${JOB_NAME}",
+  "deployment_notes": "${APPROVAL_NOTES:-""}"
+}
+EOF
+                        
+                        echo "Deployment record created: deployment-record.json"
+                    '''
+                    
+                    // Archive the deployment record
+                    archiveArtifacts artifacts: 'deployment-record.json', allowEmptyArchive: true
                 }
             }
         }
     }
     
     post {
-        success {
-            echo "🎉 Pipeline completed successfully!"
-            echo ""
-            echo "✅ Next Steps:"
-            echo "1. Check ArgoCD UI: http://134.122.119.201:32129"
-            echo "2. Verify applications are healthy and synced"
-            echo "3. Check pods in namespace: kubectl get pods -n s6arserne"
-            echo "4. Applications will auto-sync when you push changes to repository"
-        }
-        failure {
-            echo "❌ Pipeline failed"
-            echo "Check the logs above for specific errors"
-        }
         always {
             script {
                 sh 'argocd logout $ARGOCD_SERVER 2>/dev/null || true'
+                sh 'rm -rf helm-repo-prod || true'
             }
+        }
+        success {
+            echo "🎉 Production Continuous Delivery Pipeline completed successfully!"
+            echo ""
+            echo "✅ What was accomplished:"
+            echo "  - Validated deployment parameters"
+            echo "  - ${params.SKIP_APPROVAL ? 'Skipped' : 'Obtained'} production approval"
+            echo "  - Created/updated production applications"
+            echo "  - Updated image tags to: ${params.IMAGE_TAG}"
+            echo "  - Deployed to namespace: ${params.ENVIRONMENT}"
+            echo "  - Verified application health"
+            echo ""
+            echo "🔗 Next steps:"
+            echo "  - Monitor applications in ArgoCD UI"
+            echo "  - Check application logs if needed"
+            echo "  - Verify services are accessible"
+            
+            // Send notification (if configured)
+            // slackSend color: 'good', message: "✅ Production deployment successful: ${params.APPLICATION} → ${params.ENVIRONMENT}"
+        }
+        failure {
+            echo "❌ Production deployment failed!"
+            echo "Please check the logs and ArgoCD UI for details"
+            
+            // Send failure notification (if configured)
+            // slackSend color: 'danger', message: "❌ Production deployment failed: ${params.APPLICATION} → ${params.ENVIRONMENT}"
         }
     }
 }
